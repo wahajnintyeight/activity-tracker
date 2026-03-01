@@ -1,0 +1,147 @@
+package service
+
+import (
+	"log"
+	"time"
+
+	"activity-tracker/internal/capture"
+	"activity-tracker/internal/config"
+	"activity-tracker/internal/idle"
+	"activity-tracker/internal/uploader"
+
+	svc "github.com/kardianos/service"
+)
+
+type ScreenshotService struct {
+	config     *config.Config
+	deviceName string
+	logger     svc.Logger
+	capturer   *capture.Capturer
+	uploader   *uploader.Uploader
+}
+
+func New(cfg *config.Config, deviceName string) (*ScreenshotService, error) {
+	// Initialize uploader with RabbitMQ
+	uploaderInstance, err := uploader.New(
+		deviceName,
+		cfg.RabbitMQURL,
+		cfg.RabbitMQExchange,
+		cfg.RabbitMQRoutingKey,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &ScreenshotService{
+		config:     cfg,
+		deviceName: deviceName,
+		capturer:   capture.New(cfg.Quality),
+		uploader:   uploaderInstance,
+	}, nil
+}
+
+func (s *ScreenshotService) SetLogger(logger svc.Logger) {
+	s.logger = logger
+}
+
+func (s *ScreenshotService) Start(svc svc.Service) error {
+	s.logger.Info("Starting screenshot service")
+	go s.run()
+	return nil
+}
+
+func (s *ScreenshotService) run() {
+	ticker := time.NewTicker(s.config.Interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// Check if user is idle
+		isIdle, err := idle.IsIdle(3 * time.Minute)
+		if err != nil {
+			s.logger.Warningf("Could not check idle time: %v", err)
+		}
+
+		if isIdle {
+			s.logger.Info("User is idle, skipping screenshot")
+			continue
+		}
+
+		if err := s.captureAndSend(); err != nil {
+			s.logger.Errorf("Error capturing/sending screenshot: %v", err)
+		}
+	}
+}
+
+func (s *ScreenshotService) captureAndSend() error {
+	// Capture screenshot with metadata
+	screenshot, err := s.capturer.Capture()
+	if err != nil {
+		return err
+	}
+
+	// Upload to API
+	return s.uploader.Upload(screenshot)
+}
+
+func (s *ScreenshotService) Stop(svc svc.Service) error {
+	s.logger.Info("Stopping screenshot service")
+	if s.uploader != nil {
+		s.uploader.Close()
+	}
+	return nil
+}
+
+func (s *ScreenshotService) RunManually() {
+	ticker := time.NewTicker(s.config.Interval)
+	defer ticker.Stop()
+
+	// Capture immediately on start if not idle
+	isIdle, _ := idle.IsIdle(3 * time.Minute)
+	if !isIdle {
+		log.Println("Capturing first screenshot...")
+		if err := s.captureAndSendWithLog(); err != nil {
+			log.Printf("Error: %v\n", err)
+		}
+	} else {
+		log.Println("User is idle, waiting for activity...")
+	}
+
+	// Then continue on interval
+	for range ticker.C {
+		// Check if user is idle
+		idleTime, err := idle.GetIdleTime()
+		if err != nil {
+			log.Printf("Could not check idle time: %v\n", err)
+		}
+
+		isIdle, _ := idle.IsIdle(3 * time.Minute)
+		if isIdle {
+			log.Printf("User idle for %v, skipping screenshot\n", idleTime.Round(time.Second))
+			continue
+		}
+
+		log.Println("Capturing screenshot...")
+		if err := s.captureAndSendWithLog(); err != nil {
+			log.Printf("Error: %v\n", err)
+		}
+	}
+}
+
+func (s *ScreenshotService) captureAndSendWithLog() error {
+	screenshot, err := s.capturer.Capture()
+	if err != nil {
+		return err
+	}
+
+	if screenshot.ActiveWindow != nil {
+		log.Printf("Active: %s (%s)\n", screenshot.ActiveWindow.ProcessName, screenshot.ActiveWindow.Title)
+	}
+
+	if err := s.uploader.Upload(screenshot); err != nil {
+		return err
+	}
+
+	log.Println("Screenshot sent successfully")
+	return nil
+}
