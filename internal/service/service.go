@@ -2,6 +2,8 @@ package service
 
 import (
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"activity-tracker/internal/capture"
@@ -47,8 +49,35 @@ func (s *ScreenshotService) SetLogger(logger svc.Logger) {
 
 func (s *ScreenshotService) Start(svc svc.Service) error {
 	s.logger.Info("Starting screenshot service")
+
+	// Setup file logging in background
+	go s.setupFileLogging()
+
+	// Start the main service loop
 	go s.run()
 	return nil
+}
+
+func (s *ScreenshotService) setupFileLogging() {
+	// Get executable directory
+	exePath, err := os.Executable()
+	if err != nil {
+		s.logger.Warningf("Could not get executable path: %v", err)
+		return
+	}
+	exeDir := filepath.Dir(exePath)
+
+	// Create logs directory
+	logDir := filepath.Join(exeDir, "logs")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		s.logger.Warningf("Could not create log directory: %v", err)
+		return
+	}
+
+	// Set log output to file
+	// log.SetOutput(f)
+	log.SetFlags(log.LstdFlags)
+	log.Println("File logging initialized")
 }
 
 func (s *ScreenshotService) run() {
@@ -57,18 +86,23 @@ func (s *ScreenshotService) run() {
 
 	for range ticker.C {
 		// Check if user is idle
-		isIdle, err := idle.IsIdle(3 * time.Minute)
-		if err != nil {
-			s.logger.Warningf("Could not check idle time: %v", err)
-		}
+		// isIdle, err := idle.IsIdle(1 * time.Minute)
+		// if err != nil {
+		// 	s.logger.Warningf("Could not check idle time: %v", err)
+		// 	log.Printf("Could not check idle time: %v", err)
+		// }
 
-		if isIdle {
-			s.logger.Info("User is idle, skipping screenshot")
-			continue
-		}
+		// if isIdle {
+		// 	s.logger.Info("User is idle, skipping screenshot")
+		// 	log.Println("User is idle, skipping screenshot")
+		// 	continue
+		// }
 
 		if err := s.captureAndSend(); err != nil {
 			s.logger.Errorf("Error capturing/sending screenshot: %v", err)
+			log.Printf("Error capturing/sending screenshot: %v", err)
+		} else {
+			log.Println("Screenshot captured and sent successfully")
 		}
 	}
 }
@@ -86,6 +120,7 @@ func (s *ScreenshotService) captureAndSend() error {
 
 func (s *ScreenshotService) Stop(svc svc.Service) error {
 	s.logger.Info("Stopping screenshot service")
+	log.Println("Stopping screenshot service")
 	if s.uploader != nil {
 		s.uploader.Close()
 	}

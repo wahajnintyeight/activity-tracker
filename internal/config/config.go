@@ -1,10 +1,11 @@
 package config
 
 import (
+	"github.com/joho/godotenv"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
-	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -17,7 +18,15 @@ type Config struct {
 
 // Load reads configuration from environment variables or uses defaults
 func Load() *Config {
+	// Try to load .env from executable directory
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		godotenv.Load(filepath.Join(exeDir, ".env"))
+	}
+
+	// Also try current directory
 	godotenv.Load()
+
 	interval := getEnvDuration("SCREENSHOT_INTERVAL", 5*time.Minute)
 	quality := getEnvInt("JPEG_QUALITY", 50)
 	rabbitmqURL := getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")

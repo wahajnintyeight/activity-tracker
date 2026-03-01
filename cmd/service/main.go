@@ -11,13 +11,16 @@ import (
 )
 
 func main() {
-	// Load configuration
-	cfg := config.Load()
-
-	// Get device name
-	deviceName, err := os.Hostname()
-	if err != nil {
-		log.Fatal(err)
+	// If no arguments, run in background mode
+	if len(os.Args) == 1 {
+		cfg := config.Load()
+		deviceName, _ := os.Hostname()
+		fullService, err := service.New(cfg, deviceName)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fullService.RunManually()
+		return
 	}
 
 	// Service configuration
@@ -25,12 +28,14 @@ func main() {
 		Name:        "ScreenshotService",
 		DisplayName: "Screenshot Capture Service",
 		Description: "Captures and uploads screenshots periodically",
+		Option: svc.KeyValue{
+			"StartType": "automatic",
+		},
 	}
 
-	// Create service instance
-	prg, err := service.New(cfg, deviceName)
-	if err != nil {
-		log.Fatalf("Failed to create service: %v", err)
+	// Create service program wrapper
+	prg := &serviceProgram{
+		svcConfig: svcConfig,
 	}
 
 	s, err := svc.New(prg, svcConfig)
@@ -38,28 +43,17 @@ func main() {
 		log.Fatal(err)
 	}
 
-	logger, err := s.Logger(nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	prg.SetLogger(logger)
-
 	// Handle commands
-	if len(os.Args) > 1 {
-		handleCommand(os.Args[1], s, prg, cfg, deviceName)
-		return
-	}
-
-	// Run as service (when started by Windows Service Manager)
-	if err := s.Run(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-func handleCommand(cmd string, s svc.Service, prg *service.ScreenshotService, cfg *config.Config, deviceName string) {
-	var err error
-
+	cmd := os.Args[1]
 	switch cmd {
+	case "run":
+		cfg := config.Load()
+		deviceName, _ := os.Hostname()
+		fullService, err := service.New(cfg, deviceName)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fullService.RunManually()
 	case "install":
 		err = s.Install()
 		if err == nil {
@@ -85,16 +79,45 @@ func handleCommand(cmd string, s svc.Service, prg *service.ScreenshotService, cf
 		if err == nil {
 			log.Println("Service restarted successfully")
 		}
-	case "run":
-		log.Printf("Running manually on device: %s\n", deviceName)
-		log.Printf("Capturing every %v, publishing to RabbitMQ exchange: %s\n", cfg.Interval, cfg.RabbitMQExchange)
-		log.Println("Press Ctrl+C to stop")
-		prg.RunManually()
 	default:
 		log.Fatalf("Unknown command: %s\nAvailable: install, uninstall, start, stop, restart, run", cmd)
 	}
-
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// serviceProgram implements svc.Interface
+type serviceProgram struct {
+	svcConfig   *svc.Config
+	fullService *service.ScreenshotService
+}
+
+func (p *serviceProgram) Start(s svc.Service) error {
+	// Initialization happens in a goroutine to not block service start
+	go func() {
+		cfg := config.Load()
+		deviceName, _ := os.Hostname()
+		fullService, err := service.New(cfg, deviceName)
+		if err != nil {
+			log.Printf("Failed to initialize service: %v", err)
+			return
+		}
+		p.fullService = fullService
+
+		// Setup logger if available
+		if logger, err := s.Logger(nil); err == nil {
+			p.fullService.SetLogger(logger)
+		}
+
+		p.fullService.Start(s)
+	}()
+	return nil
+}
+
+func (p *serviceProgram) Stop(s svc.Service) error {
+	if p.fullService != nil {
+		return p.fullService.Stop(s)
+	}
+	return nil
 }

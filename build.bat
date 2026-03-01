@@ -4,8 +4,8 @@ echo Building activity-tracker.exe...
 REM Create output directory if it doesn't exist
 if not exist "output" mkdir output
 
-REM Build the executable to output directory
-go build -o output/activity-tracker.exe ./cmd/service
+REM Build as Windows GUI app (no console window)
+go build -ldflags="-H windowsgui" -o output/activity-tracker.exe ./cmd/service
 
 if %errorlevel% equ 0 (
     echo.
@@ -21,13 +21,11 @@ if %errorlevel% equ 0 (
     )
     echo.
     echo Usage:
-    echo   output\activity-tracker.exe run          - Run manually
-    echo   output\activity-tracker.exe install      - Install as service (Admin)
-    echo   output\activity-tracker.exe start        - Start service (Admin)
-    echo   output\activity-tracker.exe stop         - Stop service (Admin)
-    echo   output\activity-tracker.exe uninstall    - Remove service (Admin)
+    echo   install-startup.bat              - Add to Windows startup
+    echo   uninstall-startup.bat            - Remove from startup
+    echo   start output\activity-tracker.exe - Run in background now
     echo.
-    echo Note: Run from activity-tracker root directory or ensure .env is in output/
 ) else (
     echo Build failed!
 )
+
