@@ -8,7 +8,6 @@ import (
 	"image"
 	"image/png"
 	"log"
-	"os"
 	"strings"
 	"time"
 )
@@ -147,19 +146,6 @@ func (ct *CricketTracker) processFrame() error {
 		return fmt.Errorf("failed to capture scoreboard: %w", err)
 	}
 
-	// Save debug image (helps with coordinate adjustment)
-	debugDir := "debug"
-	if _, err := os.Stat(debugDir); os.IsNotExist(err) {
-		os.Mkdir(debugDir, 0755)
-	}
-
-	debugPath := fmt.Sprintf("%s/cricket-debug-%d.png", debugDir, time.Now().Unix())
-	if debugFile, err := os.Create(debugPath); err == nil {
-		png.Encode(debugFile, img)
-		debugFile.Close()
-		log.Printf("Debug image saved: %s", debugPath)
-	}
-
 	// Two modes: Local OCR or LLM OCR
 	if ct.useLLMOCR {
 		// LLM OCR Mode: Send image to queue for server-side analysis
@@ -186,7 +172,7 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 	}
 
 	// Process score and detect events
-	event, newState := ProcessScore(text, ct.matchState)
+	event, newState := ProcessScoreWithVision(img, text, ct.matchState)
 	ct.matchState = newState
 
 	// If event detected, check for duplicates before publishing
