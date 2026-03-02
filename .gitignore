@@ -8,3 +8,7 @@ output/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Debug images from cricket tracker
+debug/
+cricket-debug-*.png

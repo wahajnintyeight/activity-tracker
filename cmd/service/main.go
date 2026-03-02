@@ -3,15 +3,35 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"activity-tracker/internal/config"
+	"activity-tracker/internal/cricket"
 	"activity-tracker/internal/service"
 
 	svc "github.com/kardianos/service"
 )
 
 func main() {
-	// If no arguments, run in background mode
+	// Parse command line arguments
+	var trackerType string
+	if len(os.Args) > 1 {
+		for i, arg := range os.Args {
+			if arg == "--type" && i+1 < len(os.Args) {
+				trackerType = os.Args[i+1]
+				break
+			}
+		}
+	}
+
+	// Handle cricket tracker mode
+	if trackerType == "cricket-tracker" {
+		runCricketTracker()
+		return
+	}
+
+	// If no arguments, run in background mode (activity tracker)
 	if len(os.Args) == 1 {
 		cfg := config.Load()
 		deviceName, _ := os.Hostname()
@@ -80,7 +100,7 @@ func main() {
 			log.Println("Service restarted successfully")
 		}
 	default:
-		log.Fatalf("Unknown command: %s\nAvailable: install, uninstall, start, stop, restart, run", cmd)
+		log.Fatalf("Unknown command: %s\nAvailable: install, uninstall, start, stop, restart, run, --type cricket-tracker", cmd)
 	}
 	if err != nil {
 		log.Fatal(err)
@@ -120,4 +140,46 @@ func (p *serviceProgram) Stop(s svc.Service) error {
 		return p.fullService.Stop(s)
 	}
 	return nil
+}
+
+func runCricketTracker() {
+	log.Println("Starting Cricket Tracker...")
+
+	cfg := config.LoadCricketConfig()
+
+	trackerConfig := &cricket.CricketTrackerConfig{
+		RabbitMQURL:        cfg.RabbitMQURL,
+		RabbitMQExchange:   cfg.RabbitMQExchange,
+		RabbitMQRoutingKey: cfg.RabbitMQRoutingKey,
+		Interval:           cfg.Interval,
+		ScoreboardX:        cfg.ScoreboardX,
+		ScoreboardY:        cfg.ScoreboardY,
+		ScoreboardWidth:    cfg.ScoreboardWidth,
+		ScoreboardHeight:   cfg.ScoreboardHeight,
+		ProcessNames:       cfg.ProcessNames,
+		UseLLMOCR:          cfg.UseLLMOCR,
+	}
+
+	tracker, err := cricket.NewCricketTracker(trackerConfig)
+	if err != nil {
+		log.Fatalf("Failed to create cricket tracker: %v", err)
+	}
+
+	// Handle graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		log.Println("Shutdown signal received, stopping cricket tracker...")
+		if err := tracker.Stop(); err != nil {
+			log.Printf("Error stopping tracker: %v", err)
+		}
+		os.Exit(0)
+	}()
+
+	// Start tracking
+	if err := tracker.Start(); err != nil {
+		log.Fatalf("Cricket tracker error: %v", err)
+	}
 }
