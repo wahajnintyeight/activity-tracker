@@ -20,6 +20,7 @@ type CricketConfig struct {
 	ScoreboardHeight   int
 	ProcessNames       []string
 	UseLLMOCR          bool // If true, send images to queue for LLM analysis instead of local OCR
+	DebugZones         bool // If true, save debug images of zones
 }
 
 // LoadCricketConfig reads cricket tracker configuration from environment
@@ -54,6 +55,9 @@ func LoadCricketConfig() *CricketConfig {
 	// OCR mode: local (Windows Native) or LLM (server-side)
 	useLLMOCR := getEnv("CRICKET_USE_LLM_OCR", "false") == "true"
 
+	// Debug mode for vision zones
+	debugZones := getEnv("CRICKET_DEBUG_ZONES", "false") == "true"
+
 	return &CricketConfig{
 		Interval:           interval,
 		RabbitMQURL:        rabbitmqURL,
@@ -65,5 +69,6 @@ func LoadCricketConfig() *CricketConfig {
 		ScoreboardHeight:   scoreboardHeight,
 		ProcessNames:       processNames,
 		UseLLMOCR:          useLLMOCR,
+		DebugZones:         debugZones,
 	}
 }

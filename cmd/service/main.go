@@ -33,13 +33,42 @@ func main() {
 
 	// If no arguments, run in background mode (activity tracker)
 	if len(os.Args) == 1 {
-		cfg := config.Load()
-		deviceName, _ := os.Hostname()
-		fullService, err := service.New(cfg, deviceName)
+		// Run as a proper background service programmatically
+		svcConfig := &svc.Config{
+			Name:        "ScreenshotService",
+			DisplayName: "Screenshot Capture Service",
+			Description: "Captures and uploads screenshots periodically",
+			Option: svc.KeyValue{
+				"StartType": "automatic",
+			},
+		}
+
+		prg := &serviceProgram{
+			svcConfig: svcConfig,
+		}
+
+		s, err := svc.New(prg, svcConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fullService.RunManually()
+
+		// Run the service programmatically (not as installed Windows service)
+		// This will run in background without console
+		err = prg.Start(s)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Handle graceful shutdown
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+		// Wait for shutdown signal
+		<-sigChan
+		log.Println("Shutdown signal received, stopping service...")
+		if err := prg.Stop(s); err != nil {
+			log.Printf("Error stopping service: %v", err)
+		}
 		return
 	}
 
@@ -120,7 +149,10 @@ func (p *serviceProgram) Start(s svc.Service) error {
 		deviceName, _ := os.Hostname()
 		fullService, err := service.New(cfg, deviceName)
 		if err != nil {
-			log.Printf("Failed to initialize service: %v", err)
+			// Try to log via service logger if available
+			if logger, err := s.Logger(nil); err == nil {
+				logger.Errorf("Failed to initialize service: %v", err)
+			}
 			return
 		}
 		p.fullService = fullService
@@ -158,6 +190,7 @@ func runCricketTracker() {
 		ScoreboardHeight:   cfg.ScoreboardHeight,
 		ProcessNames:       cfg.ProcessNames,
 		UseLLMOCR:          cfg.UseLLMOCR,
+		DebugZones:         cfg.DebugZones,
 	}
 
 	tracker, err := cricket.NewCricketTracker(trackerConfig)

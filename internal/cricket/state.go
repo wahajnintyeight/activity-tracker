@@ -3,6 +3,7 @@ package cricket
 import (
 	"fmt"
 	"image"
+	"regexp"
 	"strings"
 )
 
@@ -50,70 +51,40 @@ type CricketImagePayload struct {
 	ImageData []byte      `json:"image_data,omitempty"` // Base64 encoded PNG
 }
 
-// ProcessScoreWithVision analyzes OCR text and detects cricket events with the help of pixel scanning
-func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState) (*GameEvent, *MatchState) {
+// ProcessScoreWithVision analyzes OCR text and detects cricket events with the help of pixel scanning and targeted OCR
+func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState, ocr OCRClient, debug bool) (*GameEvent, *MatchState) {
 	currentText = strings.TrimSpace(currentText)
 
 	if currentText == "" {
 		return nil, previous
 	}
 
-	// Check if this is a milestone screen
-	if isMilestoneScreen(currentText) {
-		milestoneState := parseMilestoneDetails(currentText)
-
-		payload := fmt.Sprintf("**%s** reaches %s! 🎉", milestoneState.BatsmanName, milestoneState.MilestoneType)
-		if milestoneState.BatsmanRuns > 0 && milestoneState.BatsmanBalls > 0 {
-			payload += fmt.Sprintf("\n%d* runs off %d balls (SR: %.1f)",
-				milestoneState.BatsmanRuns,
-				milestoneState.BatsmanBalls,
-				milestoneState.BatsmanStrikeRate)
-		}
-
-		event := &GameEvent{
-			Type:      EventTypeMilestone,
-			Payload:   payload,
-			Raw:       currentText,
-			MatchData: milestoneState,
-		}
-
-		if previous != nil {
-			newState := *previous
-			newState.BatsmanName = milestoneState.BatsmanName
-			newState.BatsmanRuns = milestoneState.BatsmanRuns
-			newState.BatsmanBalls = milestoneState.BatsmanBalls
-			newState.BatsmanStrikeRate = milestoneState.BatsmanStrikeRate
-			newState.MilestoneType = milestoneState.MilestoneType
-			newState.MilestoneRuns = milestoneState.MilestoneRuns
-			newState.LastScore = currentText
-			return event, &newState
-		}
-		return event, milestoneState
+	// Initialize state if first run
+	var currentState *MatchState
+	if previous == nil {
+		currentState = &MatchState{LastScore: currentText}
+	} else {
+		// Clone previous state to maintain memory of batsmen
+		temp := *previous
+		currentState = &temp
 	}
 
-	// Check if this is a wicket dismissal screen
+	// 1. Check for SPECIAL SCREENS first (Wickets, Arrivals)
+
+	// BATSMAN DEPARTING (Wicket Screen)
 	if isWicketDismissalScreen(currentText) {
 		dismissalState := parseDismissalDetails(currentText)
 
-		payload := fmt.Sprintf("Batsman dismissed: %s scored %d runs off %d balls (SR: %.1f)",
-			dismissalState.BatsmanName,
-			dismissalState.BatsmanRuns,
-			dismissalState.BatsmanBalls,
-			dismissalState.BatsmanStrikeRate)
-
-		if dismissalState.DismissalType != "" {
-			payload += fmt.Sprintf(" | Dismissal: %s", dismissalState.DismissalType)
-			if dismissalState.DismissalFielder != "" {
-				payload += fmt.Sprintf(" (c. %s)", dismissalState.DismissalFielder)
-			}
-			if dismissalState.DismissalBowler != "" {
-				payload += fmt.Sprintf(" b. %s", dismissalState.DismissalBowler)
-			}
+		// Logic: Identify who left and clear their slot
+		departedName := strings.ToLower(dismissalState.BatsmanName)
+		if strings.Contains(strings.ToLower(currentState.BatsmanLeft), departedName) || strings.Contains(departedName, strings.ToLower(currentState.BatsmanLeft)) {
+			currentState.BatsmanLeft = ""
+		} else if strings.Contains(strings.ToLower(currentState.BatsmanRight), departedName) || strings.Contains(departedName, strings.ToLower(currentState.BatsmanRight)) {
+			currentState.BatsmanRight = ""
 		}
 
-		if dismissalState.Wickets > 0 && dismissalState.TotalRuns > 0 {
-			payload += fmt.Sprintf(" | Score: %d/%d", dismissalState.Wickets, dismissalState.TotalRuns)
-		}
+		payload := fmt.Sprintf("Wicket! %s dismissed for %d. Score: %d/%d",
+			dismissalState.BatsmanName, dismissalState.BatsmanRuns, dismissalState.Wickets, dismissalState.TotalRuns)
 
 		event := &GameEvent{
 			Type:      EventTypeBatsmanDepart,
@@ -121,131 +92,92 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 			Raw:       currentText,
 			MatchData: dismissalState,
 		}
-
-		if previous != nil {
-			newState := *previous
-			newState.BatsmanName = dismissalState.BatsmanName
-			newState.BatsmanRuns = dismissalState.BatsmanRuns
-			newState.BatsmanBalls = dismissalState.BatsmanBalls
-			newState.BatsmanStrikeRate = dismissalState.BatsmanStrikeRate
-			newState.DismissalBowler = dismissalState.DismissalBowler
-			newState.DismissalFielder = dismissalState.DismissalFielder
-			newState.DismissalType = dismissalState.DismissalType
-			newState.Wickets = dismissalState.Wickets
-			newState.TotalRuns = dismissalState.TotalRuns
-			newState.LastScore = currentText
-			return event, &newState
-		}
-		return event, dismissalState
+		currentState.LastScore = currentText
+		return event, currentState
 	}
 
-	// Check if this is a bowler stats screen
-	if isBowlerStatsScreen(currentText) {
-		bowlerStats := parseBowlerCareerStats(currentText)
-
-		payload := fmt.Sprintf("New bowler: %s", bowlerStats.BowlerName)
-		if bowlerStats.CareerMatches > 0 {
-			payload += fmt.Sprintf(" | Career: %d matches, %d wickets",
-				bowlerStats.CareerMatches,
-				bowlerStats.BowlerWickets)
-		}
-
-		event := &GameEvent{
-			Type:      EventTypeBowlerArrive,
-			Payload:   payload,
-			Raw:       currentText,
-			MatchData: bowlerStats,
-		}
-
-		if previous != nil {
-			newState := *previous
-			newState.BowlerName = bowlerStats.BowlerName
-			newState.BowlerWickets = bowlerStats.BowlerWickets
-			newState.CareerMatches = bowlerStats.CareerMatches
-			newState.LastScore = currentText
-			return event, &newState
-		}
-		return event, bowlerStats
-	}
-
-	// Check if this is a batsman stats screen
+	// BATSMAN ARRIVING (Career Stats Screen)
 	if isBatsmanStatsScreen(currentText) {
-		careerStats := parseBatsmanCareerStats(currentText)
+		arrivalState := parseBatsmanCareerStats(currentText)
 
-		payload := fmt.Sprintf("New batsman: %s", careerStats.BatsmanName)
-		if careerStats.CareerMatches > 0 {
-			payload += fmt.Sprintf(" | Career: %d matches, %d runs, avg %.2f",
-				careerStats.CareerMatches,
-				careerStats.CareerRuns,
-				careerStats.CareerAverage)
+		// Logic: Fill the empty slot
+		if currentState.BatsmanLeft == "" {
+			currentState.BatsmanLeft = arrivalState.BatsmanName
+		} else if currentState.BatsmanRight == "" && arrivalState.BatsmanName != currentState.BatsmanLeft {
+			currentState.BatsmanRight = arrivalState.BatsmanName
 		}
 
 		event := &GameEvent{
 			Type:      EventTypeBatsmanArrive,
-			Payload:   payload,
+			Payload:   fmt.Sprintf("New batsman in: %s", arrivalState.BatsmanName),
 			Raw:       currentText,
-			MatchData: careerStats,
+			MatchData: arrivalState,
 		}
-
-		if previous != nil {
-			newState := *previous
-			newState.BatsmanName = careerStats.BatsmanName
-			newState.CareerRuns = careerStats.CareerRuns
-			newState.CareerAverage = careerStats.CareerAverage
-			newState.CareerMatches = careerStats.CareerMatches
-			newState.LastScore = currentText
-			return event, &newState
-		}
-		return event, careerStats
+		currentState.LastScore = currentText
+		return event, currentState
 	}
 
-	// Process standard scoreboard
-	if previous == nil {
-		return nil, &MatchState{LastScore: currentText}
-	}
-
-	if currentText == previous.LastScore {
+	// 2. STANDARD SCOREBOARD PROCESSING
+	if previous != nil && currentText == previous.LastScore {
 		return nil, previous
 	}
 
-	currentState := parseScoreText(currentText)
-	if currentState == nil {
+	scoreboardState := parseScoreText(currentText)
+	if scoreboardState == nil {
 		return nil, previous
 	}
 
-	// Persist names from previous state if missing in current (e.g. during overlays)
-	currentState.BatsmanLeft = previous.BatsmanLeft
-	currentState.BatsmanRight = previous.BatsmanRight
+	// Update score-related fields
+	currentState.TotalRuns = scoreboardState.TotalRuns
+	currentState.Wickets = scoreboardState.Wickets
+	currentState.Overs = scoreboardState.Overs
+	currentState.BowlerName = scoreboardState.BowlerName
+	currentState.DeliverySpeed = scoreboardState.DeliverySpeed
 
-	// If OCR found specific batsman names, update our Left/Right records
-	updateBatsmanRecords(currentText, currentState)
+	// TARGETED OCR ON ZONES (Used to fill missing names or confirm)
+	var zones = []struct {
+		rect [2][2]int
+		side string
+	}{
+		{rect: [2][2]int{{400, 595}, {85, 130}}, side: "left"},
+		{rect: [2][2]int{{810, 1000}, {85, 130}}, side: "right"},
+		// {rect: [2][2]int{{240, 500}, {85, 130}}, side: "left"},
+		// {rect: [2][2]int{{580, 840}, {85, 130}}, side: "right"},
+	}
 
-	// VISUAL STRIKER DETECTION
-	// Coordinates relative to your 1800x190 scoreboard crop.
-	// Adjusting to target the small white triangle indicator.
-	batsman1Zone := [2][2]int{{410, 595}, {45, 135}} // Left side striker arrow
-	batsman2Zone := [2][2]int{{810, 1000}, {45, 135}} // Right side striker arrow
-
-	// Make sure the image is large enough for the zones to avoid index out of bounds
 	bounds := img.Bounds()
-	if bounds.Dx() >= 795 && bounds.Dy() >= 100 {
-		striker1 := DetectStriker(img, batsman1Zone[0], batsman1Zone[1], "left")
-		striker2 := DetectStriker(img, batsman2Zone[0], batsman2Zone[1], "right")
+	if bounds.Dx() >= 1000 && bounds.Dy() >= 130 {
+		for _, z := range zones {
+			// Only OCR if we really need to (slot empty) or to verify
+			rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
+			sub := img.SubImage(rect).(*image.RGBA)
+			name, _ := ocr.ExtractText(sub)
 
-		if striker1 {
-			currentState.IsStrikerOnLeft = true
-			fmt.Println("Vision: Striker detected on LEFT")
-			if currentState.BatsmanLeft != "" {
-				currentState.BatsmanName = currentState.BatsmanLeft
+			cleanName := cleanZoneName(name)
+			if cleanName != "" {
+				// If slot is empty, fill it immediately
+				if z.side == "left" && currentState.BatsmanLeft == "" {
+					currentState.BatsmanLeft = cleanName
+				} else if z.side == "right" && currentState.BatsmanRight == "" {
+					currentState.BatsmanRight = cleanName
+				}
 			}
-		} else if striker2 {
-			currentState.IsStrikerOnLeft = false
-			fmt.Println("Vision: Striker detected on RIGHT")
-			if currentState.BatsmanRight != "" {
-				currentState.BatsmanName = currentState.BatsmanRight
+
+			// VISUAL STRIKER DETECTION (Always check for arrow, even in number zones)
+			if DetectStriker(sub, z.side, debug) {
+				if z.side == "left" {
+					currentState.IsStrikerOnLeft = true
+				} else {
+					currentState.IsStrikerOnLeft = false
+				}
 			}
+		}
+
+		// Update active batsman name after all zones processed
+		if currentState.IsStrikerOnLeft {
+			currentState.BatsmanName = currentState.BatsmanLeft
 		} else {
-			fmt.Println("Vision: No striker indicator found in zones")
+			currentState.BatsmanName = currentState.BatsmanRight
 		}
 	}
 
@@ -253,4 +185,45 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	currentState.LastScore = currentText
 
 	return event, currentState
+}
+
+// cleanZoneName removes OCR noise like triangles or dots from the small zone text
+func cleanZoneName(text string) string {
+	text = strings.TrimSpace(text)
+	textLower := strings.ToLower(text)
+
+	// List of forbidden words that are part of HUD overlays
+	forbidden := []string{
+		"footwork", "shot choice", "timing", "shot ch", "shot",
+		"foc", "foo", "choice", "ideal", "good", "early", "late",
+		"nork timit", "ork", "tim", "work","over","run",
+	}
+
+	for _, word := range forbidden {
+		if strings.Contains(textLower, word) {
+			return ""
+		}
+	}
+
+	// Remove common leading indicators
+	text = regexp.MustCompile(`^([|>I]{0,2}>|[|▶]|\.|\s)+`).ReplaceAllString(text, "")
+
+	// Final check: name should have some length and not be just noise
+	if len(text) < 2 {
+		return ""
+	}
+
+	// Reject if the text is primarily numeric (likely a score or balls)
+	digitCount := 0
+	for _, char := range text {
+		if char >= '0' && char <= '9' {
+			digitCount++
+		}
+	}
+	if float64(digitCount)/float64(len(text)) > 0.5 {
+		return ""
+	}
+
+	// Use existing corrections
+	return correctPlayerName(strings.Title(strings.ToLower(text)))
 }

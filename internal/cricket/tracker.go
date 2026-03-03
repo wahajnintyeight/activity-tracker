@@ -20,6 +20,7 @@ type CricketTracker struct {
 	interval       time.Duration
 	processNames   []string // Cricket game process names to monitor
 	useLLMOCR      bool     // If true, send images to queue instead of doing local OCR
+	debugZones     bool     // If true, save debug images of zones
 	stopChan       chan struct{}
 	lastEvent      *GameEvent // Track last event to prevent duplicates
 	lastEventTime  time.Time  // Track when last event was sent
@@ -36,6 +37,7 @@ type CricketTrackerConfig struct {
 	ScoreboardHeight   int
 	ProcessNames       []string
 	UseLLMOCR          bool // If true, send images to queue for LLM analysis
+	DebugZones         bool // If true, save debug images of zones
 }
 
 // NewCricketTracker creates a new cricket tracking service
@@ -76,6 +78,7 @@ func NewCricketTracker(config *CricketTrackerConfig) (*CricketTracker, error) {
 		interval:       config.Interval,
 		processNames:   processNames,
 		useLLMOCR:      config.UseLLMOCR,
+		debugZones:     config.DebugZones,
 		stopChan:       make(chan struct{}),
 	}, nil
 }
@@ -172,8 +175,13 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 	}
 
 	// Process score and detect events
-	event, newState := ProcessScoreWithVision(img, text, ct.matchState)
+	event, newState := ProcessScoreWithVision(img, text, ct.matchState, ct.ocrClient, ct.debugZones)
 	ct.matchState = newState
+
+	if ct.matchState != nil {
+		log.Printf("Batsmen: Left='%s', Right='%s' | Striker: '%s' (LeftIsStriker: %v)",
+			ct.matchState.BatsmanLeft, ct.matchState.BatsmanRight, ct.matchState.BatsmanName, ct.matchState.IsStrikerOnLeft)
+	}
 
 	// If event detected, check for duplicates before publishing
 	if event != nil {

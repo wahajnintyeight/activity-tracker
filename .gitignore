@@ -11,4 +11,5 @@ Thumbs.db
 
 # Debug images from cricket tracker
 debug/
+debug_zones/
 cricket-debug-*.png
