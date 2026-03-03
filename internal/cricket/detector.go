@@ -117,6 +117,10 @@ func detectEvent(prev, curr *MatchState) *GameEvent {
 		return nil
 	}
 
+	if curr.ScoreboardFrames < 2 {
+		return nil
+	}
+
 	// If previous state had no score data, don't detect events yet
 	if prev.TotalRuns == 0 && prev.Wickets == 0 {
 		return nil
@@ -126,7 +130,7 @@ func detectEvent(prev, curr *MatchState) *GameEvent {
 	wicketsDiff := curr.Wickets - prev.Wickets
 
 	// Wicket fallen
-	if wicketsDiff > 0 && (runsDiff >= 0) {
+	if wicketsDiff == 1 && (runsDiff >= 0) {
 		payload := fmt.Sprintf("Wicket! %d/%d (Overs: %.1f)", curr.Wickets, curr.TotalRuns, curr.Overs)
 		if curr.BatsmanName != "" {
 			payload = fmt.Sprintf("Wicket! %s out. Score: %d/%d (Overs: %.1f)", curr.BatsmanName, curr.Wickets, curr.TotalRuns, curr.Overs)

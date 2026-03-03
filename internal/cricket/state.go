@@ -12,6 +12,7 @@ type MatchState struct {
 	Wickets           int     `json:"wickets"`
 	Overs             float64 `json:"overs"` // Team's total overs (e.g., 35.5)
 	LastScore         string  `json:"last_score"`
+	ScoreboardFrames  int     `json:"scoreboard_frames"`
 	BallsCount        int     `json:"balls_count"`
 	BowlerName        string  `json:"bowler_name"`         // Current bowler (e.g., "J. Archer")
 	BowlerOvers       float64 `json:"bowler_overs"`        // Bowler's overs (e.g., 2.5)
@@ -127,6 +128,12 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 		return nil, previous
 	}
 
+	if previous == nil {
+		currentState.ScoreboardFrames = 1
+	} else {
+		currentState.ScoreboardFrames = previous.ScoreboardFrames + 1
+	}
+
 	// Update score-related fields
 	currentState.TotalRuns = scoreboardState.TotalRuns
 	currentState.Wickets = scoreboardState.Wickets
@@ -139,10 +146,10 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 		rect [2][2]int
 		side string
 	}{
-		{rect: [2][2]int{{400, 595}, {85, 130}}, side: "left"},
-		{rect: [2][2]int{{810, 1000}, {85, 130}}, side: "right"},
-		// {rect: [2][2]int{{240, 500}, {85, 130}}, side: "left"},
-		// {rect: [2][2]int{{580, 840}, {85, 130}}, side: "right"},
+		{rect: [2][2]int{{440, 635}, {75, 135}}, side: "left"}, //team score on left 
+		{rect: [2][2]int{{810, 1000}, {75, 135}}, side: "right"}, //team score on left
+		{rect: [2][2]int{{235, 500}, {75, 135}}, side: "left"}, //team score on middle
+		{rect: [2][2]int{{575, 840}, {75, 135}}, side: "right"}, //team score on middle
 	}
 
 	bounds := img.Bounds()
@@ -173,6 +180,37 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 			}
 		}
 
+		// Validate and replace names containing numbers
+		// If a name contains digits, check other zones for valid replacement
+		if containsDigit(currentState.BatsmanLeft) {
+			for _, z := range zones {
+				if z.side == "left" {
+					rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
+					sub := img.SubImage(rect).(*image.RGBA)
+					name, _ := ocr.ExtractText(sub)
+					cleanName := cleanZoneName(name)
+					if cleanName != "" && !containsDigit(cleanName) {
+						currentState.BatsmanLeft = cleanName
+						break
+					}
+				}
+			}
+		}
+		if containsDigit(currentState.BatsmanRight) {
+			for _, z := range zones {
+				if z.side == "right" {
+					rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
+					sub := img.SubImage(rect).(*image.RGBA)
+					name, _ := ocr.ExtractText(sub)
+					cleanName := cleanZoneName(name)
+					if cleanName != "" && !containsDigit(cleanName) {
+						currentState.BatsmanRight = cleanName
+						break
+					}
+				}
+			}
+		}
+
 		// Update active batsman name after all zones processed
 		if currentState.IsStrikerOnLeft {
 			currentState.BatsmanName = currentState.BatsmanLeft
@@ -185,6 +223,16 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	currentState.LastScore = currentText
 
 	return event, currentState
+}
+
+// containsDigit checks if a string contains any numeric digit
+func containsDigit(s string) bool {
+	for _, char := range s {
+		if char >= '0' && char <= '9' {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanZoneName removes OCR noise like triangles or dots from the small zone text

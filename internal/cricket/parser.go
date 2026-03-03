@@ -12,15 +12,40 @@ func parseScoreText(text string) *MatchState {
 	state := &MatchState{}
 	lines := strings.Split(text, "\n")
 
+	scorePattern := regexp.MustCompile(`(\d+)[/-](\d+)`)
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		lineLower := strings.ToLower(line)
 
 		// Pattern 1: Team Score - Wickets/Runs (e.g., "6/180")
-		scorePattern := regexp.MustCompile(`(\d+)[/-](\d+)`)
-		if matches := scorePattern.FindStringSubmatch(lineLower); len(matches) >= 3 {
-			state.Wickets, _ = strconv.Atoi(matches[1])
-			state.TotalRuns, _ = strconv.Atoi(matches[2])
+		if matches := scorePattern.FindAllStringSubmatch(lineLower, -1); len(matches) > 0 {
+			bestWickets := 0
+			bestRuns := 0
+			for _, m := range matches {
+				if len(m) < 3 {
+					continue
+				}
+				w, _ := strconv.Atoi(m[1])
+				r, _ := strconv.Atoi(m[2])
+
+				// Heuristic: prefer realistic team scores over bowler figures like 1-49.
+				// Team runs are typically the larger number in the HUD; bowler conceded runs are usually much smaller.
+				if w < 0 || w > 10 {
+					continue
+				}
+				if r <= bestRuns {
+					continue
+				}
+
+				bestWickets = w
+				bestRuns = r
+			}
+
+			if bestRuns > 0 {
+				state.Wickets = bestWickets
+				state.TotalRuns = bestRuns
+			}
 		}
 
 		// Pattern 2: Team overs (e.g., "27.3 overs")

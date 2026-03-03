@@ -9,7 +9,6 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kardianos/service v1.2.2
 	github.com/kbinani/screenshot v0.0.0-20230812210009-b87d31814237
-	github.com/otiai10/gosseract/v2 v2.4.1
 	go-micro.dev/v4 v4.10.2
 	golang.org/x/sys v0.26.0
 )

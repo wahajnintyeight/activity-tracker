@@ -31,6 +31,7 @@ func DefaultStrikerDetector() StrikerDetector {
 // DetectStriker is the entry point for striker detection on a zone strip.
 // It specifically looks for the bright triangular marker in the left gutter.
 func DetectStriker(zone *image.RGBA, side string, debug bool) bool {
+	ts := time.Now().UnixNano() / 1e6
 	if debug {
 		// Create debug crop for this zone
 		debugDir := "debug_zones"
@@ -39,7 +40,7 @@ func DetectStriker(zone *image.RGBA, side string, debug bool) bool {
 		}
 
 		// Save the zone image for visual verification
-		debugPath := fmt.Sprintf("%s/zone-%s-%d.png", debugDir, side, time.Now().UnixNano()/1e6)
+		debugPath := fmt.Sprintf("%s/zone-%s-%d.png", debugDir, side, ts)
 		if f, err := os.Create(debugPath); err == nil {
 			png.Encode(f, zone)
 			f.Close()
@@ -47,10 +48,11 @@ func DetectStriker(zone *image.RGBA, side string, debug bool) bool {
 	}
 
 	detector := DefaultStrikerDetector()
-	return detector.HasStrikerMarker(zone, side, debug)
+	return detector.HasStrikerMarker(zone, side, debug, ts)
 }
 
-func (d StrikerDetector) HasStrikerMarker(zone *image.RGBA, side string, debug bool) bool {
+func (d StrikerDetector) HasStrikerMarker(zone *image.RGBA, side string, debug bool, ts int64) bool {
+
 	if zone == nil {
 		return false
 	}
@@ -84,7 +86,7 @@ func (d StrikerDetector) HasStrikerMarker(zone *image.RGBA, side string, debug b
 	if debug {
 		gutterRect := image.Rect(x0, y0, x1, y1)
 		gutterImg := zone.SubImage(gutterRect).(*image.RGBA)
-		gutterPath := fmt.Sprintf("%s/gutter-%s-%d.png", "debug_zones", side, time.Now().UnixNano()/1e6)
+		gutterPath := fmt.Sprintf("%s/gutter-%s-%d.png", "debug_zones", side, ts)
 		if f, err := os.Create(gutterPath); err == nil {
 			png.Encode(f, gutterImg)
 			f.Close()
@@ -128,8 +130,12 @@ func (d StrikerDetector) HasStrikerMarker(zone *image.RGBA, side string, debug b
 	isDetected := brightRatio >= d.MinBrightRatio && colsOnRatio >= d.MinColumnsOn
 
 	// Log the detection metrics for debugging
-	fmt.Printf("[Striker Check] Side: %s | BrightRatio: %.3f (min: %.2f) | ColsOnRatio: %.3f (min: %.2f) | Detected: %v\n",
-		side, brightRatio, d.MinBrightRatio, colsOnRatio, d.MinColumnsOn, isDetected)
+	debugSuffix := ""
+	if debug {
+		debugSuffix = fmt.Sprintf(" | Zone: zone-%s-%d.png", side, ts)
+	}
+	fmt.Printf("[Striker Check] Side: %s | BrightRatio: %.3f (min: %.2f) | ColsOnRatio: %.3f (min: %.2f) | Detected: %v%s\n",
+		side, brightRatio, d.MinBrightRatio, colsOnRatio, d.MinColumnsOn, isDetected, debugSuffix)
 
 	return isDetected
 }
