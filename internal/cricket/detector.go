@@ -147,7 +147,7 @@ func detectEvent(prev, curr *MatchState) *GameEvent {
 	if runsDiff == 6 {
 		payload := fmt.Sprintf("SIX! Score: %d/%d (Overs: %.1f)", curr.Wickets, curr.TotalRuns, curr.Overs)
 		if curr.BatsmanName != "" {
-			payload = fmt.Sprintf("SIX! %s smash it. Score: %d/%d (Overs: %.1f)", curr.BatsmanName, curr.Wickets, curr.TotalRuns, curr.Overs)
+			payload = fmt.Sprintf("SIX! %s smashed it over the rope. Score: %d/%d (Overs: %.1f)", curr.BatsmanName, curr.Wickets, curr.TotalRuns, curr.Overs)
 		}
 		if curr.BowlerName != "" {
 			bowlerStats := fmt.Sprintf("%.1f overs", curr.BowlerOvers)
@@ -171,7 +171,7 @@ func detectEvent(prev, curr *MatchState) *GameEvent {
 	if runsDiff == 4 {
 		payload := fmt.Sprintf("FOUR! Score: %d/%d (Overs: %.1f)", curr.Wickets, curr.TotalRuns, curr.Overs)
 		if curr.BatsmanName != "" {
-			payload = fmt.Sprintf("FOUR! %s strike it. Score: %d/%d (Overs: %.1f)", curr.BatsmanName, curr.Wickets, curr.TotalRuns, curr.Overs)
+			payload = fmt.Sprintf("FOUR! %s has hit the ropes. Score: %d/%d (Overs: %.1f)", curr.BatsmanName, curr.Wickets, curr.TotalRuns, curr.Overs)
 		}
 		if curr.BowlerName != "" {
 			bowlerStats := fmt.Sprintf("%.1f overs", curr.BowlerOvers)
