@@ -130,7 +130,7 @@ func (ct *CricketTracker) processFrame() error {
 	}
 
 	// Check if active process matches any cricket game
-	isCricketActive := true
+	isCricketActive := false
 	for _, procName := range ct.processNames {
 		if strings.EqualFold(activeWin.ProcessName, procName) {
 			isCricketActive = true

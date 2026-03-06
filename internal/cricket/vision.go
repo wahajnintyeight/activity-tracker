@@ -23,8 +23,8 @@ type StrikerDetector struct {
 func DefaultStrikerDetector() StrikerDetector {
 	return StrikerDetector{
 		BrightThreshold: 0.90,
-		MinBrightRatio:  0.08,
-		MinColumnsOn:    0.25,
+		MinBrightRatio:  0.05,
+		MinColumnsOn:    0.17,
 	}
 }
 

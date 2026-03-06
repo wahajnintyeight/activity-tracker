@@ -108,9 +108,17 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 			currentState.BatsmanRight = arrivalState.BatsmanName
 		}
 
+		payload := fmt.Sprintf(
+			"New batsman: %s | Career: %d matches, %d runs, avg %.2f",
+			arrivalState.BatsmanName,
+			arrivalState.CareerMatches,
+			arrivalState.CareerRuns,
+			arrivalState.CareerAverage,
+		)
+
 		event := &GameEvent{
 			Type:      EventTypeBatsmanArrive,
-			Payload:   fmt.Sprintf("New batsman in: %s", arrivalState.BatsmanName),
+			Payload:   payload,
 			Raw:       currentText,
 			MatchData: arrivalState,
 		}
@@ -118,14 +126,33 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 		return event, currentState
 	}
 
+	// BOWLER ARRIVING (Bowler Stats Screen)
+	if isBowlerStatsScreen(currentText) {
+		bowlerState := parseBowlerCareerStats(currentText)
+		currentState.BowlerName = bowlerState.BowlerName
+
+		event := &GameEvent{
+			Type:      EventTypeBowlerArrive,
+			Payload:   fmt.Sprintf("New bowler: %s (%d wickets in %d matches)", bowlerState.BowlerName, bowlerState.BowlerWickets, bowlerState.CareerMatches),
+			Raw:       currentText,
+			MatchData: bowlerState,
+		}
+		currentState.LastScore = currentText
+		return event, currentState
+	}
+
 	// 2. STANDARD SCOREBOARD PROCESSING
 	if previous != nil && currentText == previous.LastScore {
-		return nil, previous
+		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug)
+		currentState.LastScore = currentText
+		return nil, currentState
 	}
 
 	scoreboardState := parseScoreText(currentText)
 	if scoreboardState == nil {
-		return nil, previous
+		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug)
+		currentState.LastScore = currentText
+		return nil, currentState
 	}
 
 	if previous == nil {
@@ -141,88 +168,116 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	currentState.BowlerName = scoreboardState.BowlerName
 	currentState.DeliverySpeed = scoreboardState.DeliverySpeed
 
-	// TARGETED OCR ON ZONES (Used to fill missing names or confirm)
-	var zones = []struct {
-		rect [2][2]int
-		side string
-	}{
-		{rect: [2][2]int{{440, 635}, {75, 135}}, side: "left"}, //team score on left 
-		{rect: [2][2]int{{810, 1000}, {75, 135}}, side: "right"}, //team score on left
-		{rect: [2][2]int{{235, 500}, {75, 135}}, side: "left"}, //team score on middle
-		{rect: [2][2]int{{575, 840}, {75, 135}}, side: "right"}, //team score on middle
-	}
-
-	bounds := img.Bounds()
-	if bounds.Dx() >= 1000 && bounds.Dy() >= 130 {
-		for _, z := range zones {
-			// Only OCR if we really need to (slot empty) or to verify
-			rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
-			sub := img.SubImage(rect).(*image.RGBA)
-			name, _ := ocr.ExtractText(sub)
-
-			cleanName := cleanZoneName(name)
-			if cleanName != "" {
-				// If slot is empty, fill it immediately
-				if z.side == "left" && currentState.BatsmanLeft == "" {
-					currentState.BatsmanLeft = cleanName
-				} else if z.side == "right" && currentState.BatsmanRight == "" {
-					currentState.BatsmanRight = cleanName
-				}
-			}
-
-			// VISUAL STRIKER DETECTION (Always check for arrow, even in number zones)
-			if DetectStriker(sub, z.side, debug) {
-				if z.side == "left" {
-					currentState.IsStrikerOnLeft = true
-				} else {
-					currentState.IsStrikerOnLeft = false
-				}
-			}
-		}
-
-		// Validate and replace names containing numbers
-		// If a name contains digits, check other zones for valid replacement
-		if containsDigit(currentState.BatsmanLeft) {
-			for _, z := range zones {
-				if z.side == "left" {
-					rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
-					sub := img.SubImage(rect).(*image.RGBA)
-					name, _ := ocr.ExtractText(sub)
-					cleanName := cleanZoneName(name)
-					if cleanName != "" && !containsDigit(cleanName) {
-						currentState.BatsmanLeft = cleanName
-						break
-					}
-				}
-			}
-		}
-		if containsDigit(currentState.BatsmanRight) {
-			for _, z := range zones {
-				if z.side == "right" {
-					rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
-					sub := img.SubImage(rect).(*image.RGBA)
-					name, _ := ocr.ExtractText(sub)
-					cleanName := cleanZoneName(name)
-					if cleanName != "" && !containsDigit(cleanName) {
-						currentState.BatsmanRight = cleanName
-						break
-					}
-				}
-			}
-		}
-
-		// Update active batsman name after all zones processed
-		if currentState.IsStrikerOnLeft {
-			currentState.BatsmanName = currentState.BatsmanLeft
-		} else {
-			currentState.BatsmanName = currentState.BatsmanRight
-		}
-	}
+	updateBatsmenAndStrikerFromZones(img, currentState, previous, scoreboardState.BatsmanName, ocr, debug)
 
 	event := detectEvent(previous, currentState)
 	currentState.LastScore = currentText
 
 	return event, currentState
+}
+
+func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState, previous *MatchState, scoreboardBatsman string, ocr OCRClient, debug bool) {
+	if img == nil || currentState == nil || ocr == nil {
+		return
+	}
+
+	// Targeted scoreboard zones: left and right batsman HUD strips.
+	var zones = []struct {
+		rect [2][2]int
+		side string
+	}{
+		{rect: [2][2]int{{440, 635}, {75, 135}}, side: "left"},
+		{rect: [2][2]int{{810, 1000}, {75, 135}}, side: "right"},
+	}
+
+	bounds := img.Bounds()
+	if bounds.Dx() < 1000 || bounds.Dy() < 130 {
+		return
+	}
+
+	strikerDetectedThisFrame := false
+	for _, z := range zones {
+		rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
+		sub := img.SubImage(rect).(*image.RGBA)
+		zoneText, _ := ocr.ExtractText(sub)
+
+		cleanName := cleanZoneName(zoneText)
+		if cleanName != "" {
+			if z.side == "left" && currentState.BatsmanLeft == "" {
+				currentState.BatsmanLeft = cleanName
+			} else if z.side == "right" && currentState.BatsmanRight == "" {
+				currentState.BatsmanRight = cleanName
+			}
+		}
+
+		if DetectStriker(sub, z.side, debug) || hasStrikerIndicator(zoneText) {
+			currentState.IsStrikerOnLeft = (z.side == "left")
+			strikerDetectedThisFrame = true
+		}
+	}
+
+	if containsDigit(currentState.BatsmanLeft) {
+		for _, z := range zones {
+			if z.side != "left" {
+				continue
+			}
+			rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
+			sub := img.SubImage(rect).(*image.RGBA)
+			name, _ := ocr.ExtractText(sub)
+			cleanName := cleanZoneName(name)
+			if cleanName != "" && !containsDigit(cleanName) {
+				currentState.BatsmanLeft = cleanName
+				break
+			}
+		}
+	}
+	if containsDigit(currentState.BatsmanRight) {
+		for _, z := range zones {
+			if z.side != "right" {
+				continue
+			}
+			rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
+			sub := img.SubImage(rect).(*image.RGBA)
+			name, _ := ocr.ExtractText(sub)
+			cleanName := cleanZoneName(name)
+			if cleanName != "" && !containsDigit(cleanName) {
+				currentState.BatsmanRight = cleanName
+				break
+			}
+		}
+	}
+
+	if strikerDetectedThisFrame {
+		if currentState.IsStrikerOnLeft {
+			currentState.BatsmanName = currentState.BatsmanLeft
+		} else {
+			currentState.BatsmanName = currentState.BatsmanRight
+		}
+		return
+	}
+
+	if matchesPlayer(scoreboardBatsman, currentState.BatsmanLeft) {
+		currentState.IsStrikerOnLeft = true
+		currentState.BatsmanName = currentState.BatsmanLeft
+		return
+	}
+	if matchesPlayer(scoreboardBatsman, currentState.BatsmanRight) {
+		currentState.IsStrikerOnLeft = false
+		currentState.BatsmanName = currentState.BatsmanRight
+		return
+	}
+	if previous != nil {
+		currentState.IsStrikerOnLeft = previous.IsStrikerOnLeft
+		if currentState.IsStrikerOnLeft {
+			currentState.BatsmanName = currentState.BatsmanLeft
+		} else {
+			currentState.BatsmanName = currentState.BatsmanRight
+		}
+		return
+	}
+	if currentState.BatsmanName == "" {
+		currentState.BatsmanName = scoreboardBatsman
+	}
 }
 
 // containsDigit checks if a string contains any numeric digit
@@ -244,7 +299,9 @@ func cleanZoneName(text string) string {
 	forbidden := []string{
 		"footwork", "shot choice", "timing", "shot ch", "shot",
 		"foc", "foo", "choice", "ideal", "good", "early", "late",
-		"nork timit", "ork", "tim", "work","over","run",
+		"nork timit", "ork", "tim", "work", "over", "run",
+		"average", "wicket", "rate", "delivery", "speed", "remaining", "today",
+		"overs", "runs", "balls", "minutes", "strike", "economy",
 	}
 
 	for _, word := range forbidden {
@@ -275,3 +332,24 @@ func cleanZoneName(text string) string {
 	// Use existing corrections
 	return correctPlayerName(strings.Title(strings.ToLower(text)))
 }
+
+func hasStrikerIndicator(text string) bool {
+	t := strings.TrimSpace(strings.ToLower(text))
+	return strings.Contains(t, ">") ||
+		strings.Contains(t, "|>") ||
+		strings.Contains(t, ">>") ||
+		strings.Contains(t, "▶")
+}
+
+func matchesPlayer(a, b string) bool {
+	a = strings.TrimSpace(strings.ToLower(a))
+	b = strings.TrimSpace(strings.ToLower(b))
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	return strings.Contains(a, b) || strings.Contains(b, a)
+}
+
