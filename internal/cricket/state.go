@@ -38,6 +38,9 @@ type MatchState struct {
 	TeamMilestoneRuns int     `json:"team_milestone_runs"` // Team milestone score reached (50, 100, 150, ...)
 	NeedRuns          int     `json:"need_runs"`           // Runs required in chase (Need A from B balls)
 	NeedBalls         int     `json:"need_balls"`          // Balls remaining in chase
+	MatchWinner       string  `json:"match_winner"`        // Team that won the match
+	MatchWinMargin    int     `json:"match_win_margin"`    // Winning margin value
+	MatchWinType      string  `json:"match_win_type"`      // RUNS or WICKETS
 }
 
 type GameEvent struct {
@@ -73,6 +76,22 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 		currentState = &temp
 	}
 
+	// MATCH RESULT screen (TEAMNAME WON BY X RUNS/WICKETS)
+	if winner, margin, unit, ok := parseMatchWonResult(currentText); ok {
+		currentState.MatchWinner = winner
+		currentState.MatchWinMargin = margin
+		currentState.MatchWinType = unit
+
+		payload := fmt.Sprintf("%s WON BY %d %s", strings.ToUpper(strings.TrimSpace(winner)), margin, unit)
+		event := &GameEvent{
+			Type:      EventTypeMatchWon,
+			Payload:   payload,
+			Raw:       currentText,
+			MatchData: currentState,
+		}
+		currentState.LastScore = currentText
+		return []*GameEvent{event}, currentState
+	}
 	// 1. Check for SPECIAL SCREENS first (Wickets, Arrivals)
 
 	// BATSMAN DEPARTING (Wicket Screen)

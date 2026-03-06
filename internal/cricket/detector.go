@@ -2,6 +2,8 @@ package cricket
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -113,6 +115,40 @@ func isMilestoneScreen(text string) bool {
 
 // detectEvents compares previous and current state to identify cricket events.
 // Multiple events can occur in the same frame (for example: boundary + team milestone).
+
+func parseMatchWonResult(text string) (winner string, margin int, unit string, ok bool) {
+	normalized := strings.Join(strings.Fields(text), " ")
+	if normalized == "" {
+		return "", 0, "", false
+	}
+
+	// Examples:
+	// TEAMNAME WON BY 200 RUNS
+	// TEAMNAME WON BY 8 WICKETS
+	re := regexp.MustCompile(`(?i)\b([a-z0-9 .&'\-]+?)\s+won\s+by\s+(\d+)\s+(runs?|wickets?)\b`)
+	m := re.FindStringSubmatch(normalized)
+	if len(m) != 4 {
+		return "", 0, "", false
+	}
+
+	winner = strings.TrimSpace(m[1])
+	winner = correctPlayerName(strings.Title(strings.ToLower(winner)))
+
+	parsedMargin, err := strconv.Atoi(strings.TrimSpace(m[2]))
+	if err != nil || parsedMargin <= 0 {
+		return "", 0, "", false
+	}
+	margin = parsedMargin
+
+	u := strings.ToUpper(strings.TrimSpace(m[3]))
+	if strings.HasPrefix(u, "RUN") {
+		unit = "RUNS"
+	} else {
+		unit = "WICKETS"
+	}
+
+	return winner, margin, unit, true
+}
 func detectEvents(prev, curr *MatchState) []*GameEvent {
 	if curr == nil || prev == nil {
 		return nil

@@ -16,6 +16,7 @@ const (
 	EventTypeChaseUpdate   CricketEventType = "CHASE_UPDATE"
 	EventTypeOverComplete  CricketEventType = "OVER_COMPLETE"
 	EventTypeInningsChange CricketEventType = "INNINGS_CHANGE"
+	EventTypeMatchWon      CricketEventType = "MATCH_WON"
 )
 
 // String returns the string representation of the event type
