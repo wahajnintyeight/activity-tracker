@@ -35,6 +35,9 @@ type MatchState struct {
 	CareerMatches     int     `json:"career_matches"`      // Batsman's career matches
 	MilestoneType     string  `json:"milestone_type"`      // Milestone achieved (fifty, century, etc.)
 	MilestoneRuns     int     `json:"milestone_runs"`      // Runs at milestone
+	TeamMilestoneRuns int     `json:"team_milestone_runs"` // Team milestone score reached (50, 100, 150, ...)
+	NeedRuns          int     `json:"need_runs"`           // Runs required in chase (Need A from B balls)
+	NeedBalls         int     `json:"need_balls"`          // Balls remaining in chase
 }
 
 type GameEvent struct {
@@ -53,7 +56,7 @@ type CricketImagePayload struct {
 }
 
 // ProcessScoreWithVision analyzes OCR text and detects cricket events with the help of pixel scanning and targeted OCR
-func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState, ocr OCRClient, debug bool) (*GameEvent, *MatchState) {
+func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState, ocr OCRClient, debug bool) ([]*GameEvent, *MatchState) {
 	currentText = strings.TrimSpace(currentText)
 
 	if currentText == "" {
@@ -94,7 +97,53 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 			MatchData: dismissalState,
 		}
 		currentState.LastScore = currentText
-		return event, currentState
+		return []*GameEvent{event}, currentState
+	}
+
+	// BATSMAN MILESTONE (Milestone Overlay)
+	if isMilestoneScreen(currentText) {
+		milestoneState := parseMilestoneDetails(currentText)
+
+		// Prefer detected milestone name; otherwise keep known striker context.
+		if milestoneState.BatsmanName == "" {
+			milestoneState.BatsmanName = currentState.BatsmanName
+		}
+		if milestoneState.BatsmanName == "" {
+			if currentState.IsStrikerOnLeft {
+				milestoneState.BatsmanName = currentState.BatsmanLeft
+			} else {
+				milestoneState.BatsmanName = currentState.BatsmanRight
+			}
+		}
+
+		if milestoneState.MilestoneRuns > 0 {
+			if milestoneState.BatsmanName != "" {
+				currentState.BatsmanName = milestoneState.BatsmanName
+			}
+			currentState.BatsmanRuns = milestoneState.BatsmanRuns
+			currentState.BatsmanBalls = milestoneState.BatsmanBalls
+			currentState.BatsmanStrikeRate = milestoneState.BatsmanStrikeRate
+			currentState.MilestoneRuns = milestoneState.MilestoneRuns
+			currentState.MilestoneType = milestoneState.MilestoneType
+
+			payload := fmt.Sprintf(
+				"Milestone! %s reaches %s (%d*) in %d balls at SR %.1f",
+				milestoneState.BatsmanName,
+				milestoneState.MilestoneType,
+				milestoneState.MilestoneRuns,
+				milestoneState.BatsmanBalls,
+				milestoneState.BatsmanStrikeRate,
+			)
+
+			event := &GameEvent{
+				Type:      EventTypeMilestone,
+				Payload:   payload,
+				Raw:       currentText,
+				MatchData: milestoneState,
+			}
+			currentState.LastScore = currentText
+			return []*GameEvent{event}, currentState
+		}
 	}
 
 	// BATSMAN ARRIVING (Career Stats Screen)
@@ -123,7 +172,7 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 			MatchData: arrivalState,
 		}
 		currentState.LastScore = currentText
-		return event, currentState
+		return []*GameEvent{event}, currentState
 	}
 
 	// BOWLER ARRIVING (Bowler Stats Screen)
@@ -138,7 +187,7 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 			MatchData: bowlerState,
 		}
 		currentState.LastScore = currentText
-		return event, currentState
+		return []*GameEvent{event}, currentState
 	}
 
 	// 2. STANDARD SCOREBOARD PROCESSING
@@ -170,10 +219,10 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 
 	updateBatsmenAndStrikerFromZones(img, currentState, previous, scoreboardState.BatsmanName, ocr, debug)
 
-	event := detectEvent(previous, currentState)
+	events := detectEvents(previous, currentState)
 	currentState.LastScore = currentText
 
-	return event, currentState
+	return events, currentState
 }
 
 func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState, previous *MatchState, scoreboardBatsman string, ocr OCRClient, debug bool) {
@@ -186,8 +235,11 @@ func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState, previous *M
 		rect [2][2]int
 		side string
 	}{
-		{rect: [2][2]int{{440, 635}, {75, 135}}, side: "left"},
-		{rect: [2][2]int{{810, 1000}, {75, 135}}, side: "right"},
+		{rect: [2][2]int{{440, 635}, {85, 140}}, side: "left"},   //team score on left
+		{rect: [2][2]int{{810, 1000}, {85, 140}}, side: "right"}, //team score on left
+
+		{rect: [2][2]int{{235, 500}, {85, 140}}, side: "left"},  //team score on middle
+		{rect: [2][2]int{{573, 837}, {85, 140}}, side: "right"}, //team score on middle
 	}
 
 	bounds := img.Bounds()
@@ -352,4 +404,3 @@ func matchesPlayer(a, b string) bool {
 	}
 	return strings.Contains(a, b) || strings.Contains(b, a)
 }
-

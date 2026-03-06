@@ -111,8 +111,9 @@ func isMilestoneScreen(text string) bool {
 	return true
 }
 
-// detectEvent compares previous and current state to identify cricket events
-func detectEvent(prev, curr *MatchState) *GameEvent {
+// detectEvents compares previous and current state to identify cricket events.
+// Multiple events can occur in the same frame (for example: boundary + team milestone).
+func detectEvents(prev, curr *MatchState) []*GameEvent {
 	if curr == nil || prev == nil {
 		return nil
 	}
@@ -128,6 +129,7 @@ func detectEvent(prev, curr *MatchState) *GameEvent {
 
 	runsDiff := curr.TotalRuns - prev.TotalRuns
 	wicketsDiff := curr.Wickets - prev.Wickets
+	events := make([]*GameEvent, 0, 2)
 
 	// Wicket fallen
 	if wicketsDiff == 1 && (runsDiff >= 0) {
@@ -135,12 +137,13 @@ func detectEvent(prev, curr *MatchState) *GameEvent {
 		if curr.BatsmanName != "" {
 			payload = fmt.Sprintf("Wicket! %s out. Score: %d/%d (Overs: %.1f)", curr.BatsmanName, curr.Wickets, curr.TotalRuns, curr.Overs)
 		}
-		return &GameEvent{
+		events = append(events, &GameEvent{
 			Type:      EventTypeWicket,
 			Payload:   payload,
 			Raw:       curr.LastScore,
 			MatchData: curr,
-		}
+		})
+		return events
 	}
 
 	// Boundary Six
@@ -159,12 +162,12 @@ func detectEvent(prev, curr *MatchState) *GameEvent {
 		if curr.DeliverySpeed != "" {
 			payload += fmt.Sprintf(" | Speed: %s", curr.DeliverySpeed)
 		}
-		return &GameEvent{
+		events = append(events, &GameEvent{
 			Type:      EventTypeBoundarySix,
 			Payload:   payload,
 			Raw:       curr.LastScore,
 			MatchData: curr,
-		}
+		})
 	}
 
 	// Boundary Four
@@ -183,13 +186,76 @@ func detectEvent(prev, curr *MatchState) *GameEvent {
 		if curr.DeliverySpeed != "" {
 			payload += fmt.Sprintf(" | Speed: %s", curr.DeliverySpeed)
 		}
-		return &GameEvent{
+		events = append(events, &GameEvent{
 			Type:      EventTypeBoundaryFour,
 			Payload:   payload,
 			Raw:       curr.LastScore,
 			MatchData: curr,
+		})
+	}
+
+	// Chase update event from "Need A from B balls"
+	if prev.NeedRuns > 0 && curr.NeedRuns > 0 && prev.NeedBalls > 0 && curr.NeedBalls > 0 {
+		needDiff := curr.NeedRuns - prev.NeedRuns
+		runsReduced := -needDiff
+		if needDiff < 0 && (runsReduced == 3 || runsReduced == 4 || runsReduced == 6) {
+			status := getChaseStatus(curr.NeedRuns, curr.NeedBalls)
+			payload := fmt.Sprintf("Chase update: Need %d from %d balls (%s)", curr.NeedRuns, curr.NeedBalls, status)
+			events = append(events, &GameEvent{
+				Type:      EventTypeChaseUpdate,
+				Payload:   payload,
+				Raw:       curr.LastScore,
+				MatchData: curr,
+			})
 		}
 	}
 
-	return nil
+	// Team score milestone (50, 100, 150, ...)
+	if runsDiff > 0 {
+		if milestoneRuns, ok := getCrossedTeamMilestone(prev.TotalRuns, curr.TotalRuns); ok {
+			curr.TeamMilestoneRuns = milestoneRuns
+			payload := fmt.Sprintf("Team milestone! %d up. Score: %d/%d (Overs: %.1f)", milestoneRuns, curr.Wickets, curr.TotalRuns, curr.Overs)
+			events = append(events, &GameEvent{
+				Type:      EventTypeTeamMilestone,
+				Payload:   payload,
+				Raw:       curr.LastScore,
+				MatchData: curr,
+			})
+		}
+	}
+
+	if len(events) == 0 {
+		return nil
+	}
+	return events
+}
+
+func getCrossedTeamMilestone(prevRuns, currRuns int) (int, bool) {
+	if currRuns <= prevRuns {
+		return 0, false
+	}
+
+	// Explicit threshold crossing rule:
+	// trigger when prev < M and curr >= M for M in 50,100,150...
+	for milestone := 50; milestone <= currRuns; milestone += 50 {
+		if prevRuns < milestone && currRuns >= milestone {
+			return milestone, true
+		}
+	}
+
+	return 0, false
+}
+
+func getChaseStatus(needRuns, needBalls int) string {
+	if needBalls <= 0 {
+		return "no balls left"
+	}
+	if needRuns <= needBalls {
+		return "chase under control"
+	}
+	gapPct := (float64(needRuns-needBalls) / float64(needBalls)) * 100
+	if gapPct <= 10 {
+		return "tight chase (within 10%)"
+	}
+	return "chasing hard"
 }

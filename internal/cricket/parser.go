@@ -123,6 +123,13 @@ func parseScoreText(text string) *MatchState {
 		}
 	}
 
+	// Pattern 9: Chase requirement (e.g., "Need 204 from 74 balls")
+	chasePattern := regexp.MustCompile(`need\s+(\d+)\s+from\s+(\d+)\s+balls`)
+	if matches := chasePattern.FindStringSubmatch(strings.ToLower(originalText)); len(matches) >= 3 {
+		state.NeedRuns, _ = strconv.Atoi(matches[1])
+		state.NeedBalls, _ = strconv.Atoi(matches[2])
+	}
+
 	state.LastScore = originalText
 
 	if state.TotalRuns == 0 && state.Wickets == 0 {
@@ -158,12 +165,22 @@ func parseMilestoneDetails(text string) *MatchState {
 		}
 	}
 
-	runsPattern := regexp.MustCompile(`(\d+)\*`)
-	if matches := runsPattern.FindStringSubmatch(text); len(matches) >= 2 {
+	// Primary target: asterisk marker immediately before run digits (e.g., "*101").
+	starBeforeRunsPattern := regexp.MustCompile(`\*(\d+)`)
+	if matches := starBeforeRunsPattern.FindStringSubmatch(text); len(matches) >= 2 {
 		runs, _ := strconv.Atoi(matches[1])
 		state.BatsmanRuns = runs
 		state.MilestoneRuns = runs
 		state.MilestoneType = determineMilestoneType(runs)
+	} else {
+		// OCR sometimes flips to trailing marker (e.g., "101*"). Keep this as fallback.
+		starAfterRunsPattern := regexp.MustCompile(`(\d+)\*`)
+		if matches := starAfterRunsPattern.FindStringSubmatch(text); len(matches) >= 2 {
+			runs, _ := strconv.Atoi(matches[1])
+			state.BatsmanRuns = runs
+			state.MilestoneRuns = runs
+			state.MilestoneType = determineMilestoneType(runs)
+		}
 	}
 
 	ballsPattern := regexp.MustCompile(`balls\s+(\d+)`)

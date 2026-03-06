@@ -12,6 +12,8 @@ const (
 	EventTypeBatsmanDepart CricketEventType = "BATSMAN_DEPART"
 	EventTypeBowlerArrive  CricketEventType = "BOWLER_ARRIVE"
 	EventTypeMilestone     CricketEventType = "MILESTONE"
+	EventTypeTeamMilestone CricketEventType = "TEAM_MILESTONE"
+	EventTypeChaseUpdate   CricketEventType = "CHASE_UPDATE"
 	EventTypeOverComplete  CricketEventType = "OVER_COMPLETE"
 	EventTypeInningsChange CricketEventType = "INNINGS_CHANGE"
 )

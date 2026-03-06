@@ -130,7 +130,7 @@ func (ct *CricketTracker) processFrame() error {
 	}
 
 	// Check if active process matches any cricket game
-	isCricketActive := false
+	isCricketActive := true
 	for _, procName := range ct.processNames {
 		if strings.EqualFold(activeWin.ProcessName, procName) {
 			isCricketActive = true
@@ -175,7 +175,7 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 	}
 
 	// Process score and detect events
-	event, newState := ProcessScoreWithVision(img, text, ct.matchState, ct.ocrClient, ct.debugZones)
+	events, newState := ProcessScoreWithVision(img, text, ct.matchState, ct.ocrClient, ct.debugZones)
 	ct.matchState = newState
 
 	if ct.matchState != nil {
@@ -183,8 +183,12 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 			ct.matchState.BatsmanLeft, ct.matchState.BatsmanRight, ct.matchState.BatsmanName, ct.matchState.IsStrikerOnLeft)
 	}
 
-	// If event detected, check for duplicates before publishing
-	if event != nil {
+	// If events detected, check duplicates and publish each
+	for _, event := range events {
+		if event == nil {
+			continue
+		}
+
 		// Deduplicate: Check if this is the same event as the last one
 		if ct.shouldPublishEvent(event) {
 			log.Printf("Cricket Event Detected: %s - %s", event.Type, event.Payload)
@@ -234,6 +238,42 @@ func (ct *CricketTracker) shouldPublishEvent(event *GameEvent) bool {
 
 				// Same batsman and same milestone = duplicate
 				if lastBatsman == currentBatsman && lastMilestone == currentMilestone {
+					return false
+				}
+			}
+
+			if event.Type == EventTypeTeamMilestone {
+				lastMilestone := 0
+				currentMilestone := 0
+
+				if ct.lastEvent.MatchData != nil {
+					lastMilestone = ct.lastEvent.MatchData.TeamMilestoneRuns
+				}
+				if event.MatchData != nil {
+					currentMilestone = event.MatchData.TeamMilestoneRuns
+				}
+
+				if lastMilestone == currentMilestone && currentMilestone > 0 {
+					return false
+				}
+			}
+
+			if event.Type == EventTypeChaseUpdate {
+				lastNeedRuns := 0
+				lastNeedBalls := 0
+				currentNeedRuns := 0
+				currentNeedBalls := 0
+
+				if ct.lastEvent.MatchData != nil {
+					lastNeedRuns = ct.lastEvent.MatchData.NeedRuns
+					lastNeedBalls = ct.lastEvent.MatchData.NeedBalls
+				}
+				if event.MatchData != nil {
+					currentNeedRuns = event.MatchData.NeedRuns
+					currentNeedBalls = event.MatchData.NeedBalls
+				}
+
+				if lastNeedRuns == currentNeedRuns && lastNeedBalls == currentNeedBalls && currentNeedRuns > 0 {
 					return false
 				}
 			}
