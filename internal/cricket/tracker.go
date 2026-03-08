@@ -13,17 +13,18 @@ import (
 )
 
 type CricketTracker struct {
-	ocrClient      OCRClient
-	publisher      *queue.RabbitMQPublisher
-	matchState     *MatchState
-	scoreboardRect image.Rectangle
-	interval       time.Duration
-	processNames   []string // Cricket game process names to monitor
-	useLLMOCR      bool     // If true, send images to queue instead of doing local OCR
-	debugZones     bool     // If true, save debug images of zones
-	stopChan       chan struct{}
-	lastEvent      *GameEvent // Track last event to prevent duplicates
-	lastEventTime  time.Time  // Track when last event was sent
+	ocrClient         OCRClient
+	publisher         *queue.RabbitMQPublisher
+	matchState        *MatchState
+	scoreboardRect    image.Rectangle
+	interval          time.Duration
+	processNames      []string // Cricket game process names to monitor
+	useLLMOCR         bool     // If true, send images to queue instead of doing local OCR
+	debugZones        bool     // If true, save debug images of zones
+	teamScorePosition string   // "left" or "middle"
+	stopChan          chan struct{}
+	lastEvent         *GameEvent // Track last event to prevent duplicates
+	lastEventTime     time.Time  // Track when last event was sent
 }
 
 type CricketTrackerConfig struct {
@@ -36,8 +37,9 @@ type CricketTrackerConfig struct {
 	ScoreboardWidth    int
 	ScoreboardHeight   int
 	ProcessNames       []string
-	UseLLMOCR          bool // If true, send images to queue for LLM analysis
-	DebugZones         bool // If true, save debug images of zones
+	UseLLMOCR          bool   // If true, send images to queue for LLM analysis
+	DebugZones         bool   // If true, save debug images of zones
+	TeamScorePosition  string // "left" or "middle"
 }
 
 // NewCricketTracker creates a new cricket tracking service
@@ -71,15 +73,16 @@ func NewCricketTracker(config *CricketTrackerConfig) (*CricketTracker, error) {
 	log.Printf("Cricket Tracker Mode: %s", mode)
 
 	return &CricketTracker{
-		ocrClient:      ocrClient,
-		publisher:      publisher,
-		matchState:     nil,
-		scoreboardRect: GetScoreboardRect(config.ScoreboardX, config.ScoreboardY, config.ScoreboardWidth, config.ScoreboardHeight),
-		interval:       config.Interval,
-		processNames:   processNames,
-		useLLMOCR:      config.UseLLMOCR,
-		debugZones:     config.DebugZones,
-		stopChan:       make(chan struct{}),
+		ocrClient:         ocrClient,
+		publisher:         publisher,
+		matchState:        nil,
+		scoreboardRect:    GetScoreboardRect(config.ScoreboardX, config.ScoreboardY, config.ScoreboardWidth, config.ScoreboardHeight),
+		interval:          config.Interval,
+		processNames:      processNames,
+		useLLMOCR:         config.UseLLMOCR,
+		debugZones:        config.DebugZones,
+		teamScorePosition: config.TeamScorePosition,
+		stopChan:          make(chan struct{}),
 	}, nil
 }
 
@@ -175,7 +178,7 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 	}
 
 	// Process score and detect events
-	events, newState := ProcessScoreWithVision(img, text, ct.matchState, ct.ocrClient, ct.debugZones)
+	events, newState := ProcessScoreWithVision(img, text, ct.matchState, ct.ocrClient, ct.debugZones, ct.teamScorePosition)
 	ct.matchState = newState
 
 	if ct.matchState != nil {

@@ -59,7 +59,7 @@ type CricketImagePayload struct {
 }
 
 // ProcessScoreWithVision analyzes OCR text and detects cricket events with the help of pixel scanning and targeted OCR
-func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState, ocr OCRClient, debug bool) ([]*GameEvent, *MatchState) {
+func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState, ocr OCRClient, debug bool, teamScorePosition string) ([]*GameEvent, *MatchState) {
 	currentText = strings.TrimSpace(currentText)
 
 	if currentText == "" {
@@ -82,6 +82,13 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 		currentState.MatchWinMargin = margin
 		currentState.MatchWinType = unit
 
+		// Suppress duplicate events if the result is exactly the same as the previous frame
+		if previous != nil && previous.MatchWinner == winner &&
+			previous.MatchWinMargin == margin && previous.MatchWinType == unit {
+			currentState.LastScore = currentText
+			return nil, currentState
+		}
+
 		payload := fmt.Sprintf("%s WON BY %d %s", strings.ToUpper(strings.TrimSpace(winner)), margin, unit)
 		event := &GameEvent{
 			Type:      EventTypeMatchWon,
@@ -98,13 +105,16 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	if isWicketDismissalScreen(currentText) {
 		dismissalState := parseDismissalDetails(currentText)
 
-		// Logic: Identify who left and clear their slot
-		departedName := strings.ToLower(dismissalState.BatsmanName)
-		if strings.Contains(strings.ToLower(currentState.BatsmanLeft), departedName) || strings.Contains(departedName, strings.ToLower(currentState.BatsmanLeft)) {
+		// Logic: Identify who left and clear their slot (left or right).
+		// Match by last name because the HUD abbreviates first names (e.g. "M. Marsh" vs "Mitch Marsh").
+		departedName := dismissalState.BatsmanName
+		if departedName != "" && lastNamesMatch(departedName, currentState.BatsmanLeft) {
 			currentState.BatsmanLeft = ""
-		} else if strings.Contains(strings.ToLower(currentState.BatsmanRight), departedName) || strings.Contains(departedName, strings.ToLower(currentState.BatsmanRight)) {
+		} else if departedName != "" && lastNamesMatch(departedName, currentState.BatsmanRight) {
 			currentState.BatsmanRight = ""
 		}
+		// Clear the active striker since the batsman has departed
+		currentState.BatsmanName = ""
 
 		payload := fmt.Sprintf("Wicket! %s dismissed for %d. Score: %d/%d",
 			dismissalState.BatsmanName, dismissalState.BatsmanRuns, dismissalState.Wickets, dismissalState.TotalRuns)
@@ -169,12 +179,35 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	if isBatsmanStatsScreen(currentText) {
 		arrivalState := parseBatsmanCareerStats(currentText)
 
-		// Logic: Fill the empty slot
-		if currentState.BatsmanLeft == "" {
+		// Logic: Fill the empty slot left by the departed batsman and make them the active striker.
+		// Use last-name matching for the duplicate guard (HUD shows "S. Smith", stats show "Steve Smith").
+		switch {
+		case currentState.BatsmanLeft == "":
 			currentState.BatsmanLeft = arrivalState.BatsmanName
-		} else if currentState.BatsmanRight == "" && arrivalState.BatsmanName != currentState.BatsmanLeft {
+			currentState.IsStrikerOnLeft = true
+		case currentState.BatsmanRight == "" && !lastNamesMatch(arrivalState.BatsmanName, currentState.BatsmanLeft):
 			currentState.BatsmanRight = arrivalState.BatsmanName
+			currentState.IsStrikerOnLeft = false
+		case lastNamesMatch(arrivalState.BatsmanName, currentState.BatsmanLeft):
+			// Arrived batsman matches left slot — update name and set as striker
+			currentState.BatsmanLeft = arrivalState.BatsmanName
+			currentState.IsStrikerOnLeft = true
+		case lastNamesMatch(arrivalState.BatsmanName, currentState.BatsmanRight):
+			// Arrived batsman matches right slot — update name and set as striker
+			currentState.BatsmanRight = arrivalState.BatsmanName
+			currentState.IsStrikerOnLeft = false
+		default:
+			// Fallback: depart screen was missed — replace the non-striker slot
+			if currentState.IsStrikerOnLeft {
+				currentState.BatsmanRight = arrivalState.BatsmanName
+				currentState.IsStrikerOnLeft = false
+			} else {
+				currentState.BatsmanLeft = arrivalState.BatsmanName
+				currentState.IsStrikerOnLeft = true
+			}
 		}
+		// The arriving batsman becomes the active striker
+		currentState.BatsmanName = arrivalState.BatsmanName
 
 		payload := fmt.Sprintf(
 			"New batsman: %s | Career: %d matches, %d runs, avg %.2f",
@@ -211,14 +244,14 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 
 	// 2. STANDARD SCOREBOARD PROCESSING
 	if previous != nil && currentText == previous.LastScore {
-		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug)
+		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug, teamScorePosition)
 		currentState.LastScore = currentText
 		return nil, currentState
 	}
 
 	scoreboardState := parseScoreText(currentText)
 	if scoreboardState == nil {
-		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug)
+		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug, teamScorePosition)
 		currentState.LastScore = currentText
 		return nil, currentState
 	}
@@ -236,7 +269,22 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	currentState.BowlerName = scoreboardState.BowlerName
 	currentState.DeliverySpeed = scoreboardState.DeliverySpeed
 
-	updateBatsmenAndStrikerFromZones(img, currentState, previous, scoreboardState.BatsmanName, ocr, debug)
+	// Detect new innings start: score has reset to 0/0 at the very beginning of an innings
+	// (overs 0.0 or 0.1) while the previous state had a real score. Clear old batsmen
+	// so they get freshly re-tracked from the HUD zones of the new innings.
+	isNewInnings := previous != nil &&
+		(previous.TotalRuns > 0 || previous.Wickets > 0) &&
+		currentState.TotalRuns == 0 &&
+		currentState.Wickets == 0 &&
+		(currentState.Overs == 0.0 || currentState.Overs == 0.1)
+	if isNewInnings {
+		currentState.BatsmanLeft = ""
+		currentState.BatsmanRight = ""
+		currentState.BatsmanName = ""
+		currentState.IsStrikerOnLeft = false
+	}
+
+	updateBatsmenAndStrikerFromZones(img, currentState, previous, scoreboardState.BatsmanName, ocr, debug, teamScorePosition)
 
 	events := detectEvents(previous, currentState)
 	currentState.LastScore = currentText
@@ -244,21 +292,28 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	return events, currentState
 }
 
-func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState, previous *MatchState, scoreboardBatsman string, ocr OCRClient, debug bool) {
+func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState, previous *MatchState, scoreboardBatsman string, ocr OCRClient, debug bool, teamScorePosition string) {
 	if img == nil || currentState == nil || ocr == nil {
 		return
 	}
 
-	// Targeted scoreboard zones: left and right batsman HUD strips.
-	var zones = []struct {
+	// Select zone coordinates based on where the team score panel is positioned.
+	type zone struct {
 		rect [2][2]int
 		side string
-	}{
-		{rect: [2][2]int{{440, 635}, {85, 140}}, side: "left"},   //team score on left
-		{rect: [2][2]int{{810, 1000}, {85, 140}}, side: "right"}, //team score on left
-
-		{rect: [2][2]int{{235, 500}, {85, 140}}, side: "left"},  //team score on middle
-		{rect: [2][2]int{{573, 837}, {85, 140}}, side: "right"}, //team score on middle
+	}
+	var zones []zone
+	switch strings.ToLower(teamScorePosition) {
+	case "middle":
+		zones = []zone{
+			{rect: [2][2]int{{235, 500}, {85, 140}}, side: "left"},
+			{rect: [2][2]int{{573, 837}, {85, 140}}, side: "right"},
+		}
+	default: // "left" and anything else
+		zones = []zone{
+			{rect: [2][2]int{{440, 635}, {85, 140}}, side: "left"},
+			{rect: [2][2]int{{810, 1000}, {85, 140}}, side: "right"},
+		}
 	}
 
 	bounds := img.Bounds()
@@ -422,4 +477,24 @@ func matchesPlayer(a, b string) bool {
 		return true
 	}
 	return strings.Contains(a, b) || strings.Contains(b, a)
+}
+
+// lastNameOf extracts the last word from a player name.
+// Works for both full names ("Mitch Marsh" → "marsh") and
+// abbreviated HUD names ("M. Marsh" → "marsh").
+func lastNameOf(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	parts := strings.Fields(name)
+	return strings.ToLower(parts[len(parts)-1])
+}
+
+// lastNamesMatch returns true when both names share the same last name,
+// enabling "Mitch Marsh" to match "M. Marsh" and vice versa.
+func lastNamesMatch(a, b string) bool {
+	la := lastNameOf(a)
+	lb := lastNameOf(b)
+	return la != "" && lb != "" && la == lb
 }

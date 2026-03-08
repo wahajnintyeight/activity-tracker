@@ -66,7 +66,9 @@ func (o *WinOCRClient) ExtractText(img *image.RGBA) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	tmpPath := tmpFile.Name()
+	tmpFile.Close() // Close immediately so os.Remove works on Windows
+	defer os.Remove(tmpPath)
 
 	// Save image (with optional preprocessing)
 	var imgToSave image.Image = img
@@ -74,7 +76,7 @@ func (o *WinOCRClient) ExtractText(img *image.RGBA) (string, error) {
 		imgToSave = o.preprocessImage(img)
 	}
 
-	f, err := os.Create(tmpFile.Name())
+	f, err := os.Create(tmpPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create image file: %w", err)
 	}
@@ -86,7 +88,7 @@ func (o *WinOCRClient) ExtractText(img *image.RGBA) (string, error) {
 	f.Close()
 
 	// Create PowerShell script file to avoid escaping issues
-	psScriptPath := tmpFile.Name() + ".ps1"
+	psScriptPath := tmpPath + ".ps1"
 	defer os.Remove(psScriptPath)
 
 	// PowerShell script using Windows.Media.Ocr API
@@ -120,7 +122,7 @@ $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
 $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
 
 Write-Output $result.Text
-`, "`", "`", tmpFile.Name())
+`, "`", "`", tmpPath)
 
 	// Write PowerShell script to file
 	if err := os.WriteFile(psScriptPath, []byte(psScript), 0644); err != nil {

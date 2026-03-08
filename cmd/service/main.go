@@ -16,18 +16,21 @@ import (
 func main() {
 	// Parse command line arguments
 	var trackerType string
+	var teamScorePositionFlag string
 	if len(os.Args) > 1 {
 		for i, arg := range os.Args {
 			if arg == "--type" && i+1 < len(os.Args) {
 				trackerType = os.Args[i+1]
-				break
+			}
+			if arg == "--team-score-position" && i+1 < len(os.Args) {
+				teamScorePositionFlag = os.Args[i+1]
 			}
 		}
 	}
 
 	// Handle cricket tracker mode
 	if trackerType == "cricket-tracker" {
-		runCricketTracker()
+		runCricketTracker(teamScorePositionFlag)
 		return
 	}
 
@@ -174,10 +177,20 @@ func (p *serviceProgram) Stop(s svc.Service) error {
 	return nil
 }
 
-func runCricketTracker() {
+func runCricketTracker(teamScorePositionFlag string) {
 	log.Println("Starting Cricket Tracker...")
 
 	cfg := config.LoadCricketConfig()
+
+	// CLI flag overrides the env var value
+	teamScorePosition := cfg.TeamScorePosition
+	if teamScorePositionFlag != "" {
+		teamScorePosition = teamScorePositionFlag
+	}
+	if teamScorePosition == "" {
+		teamScorePosition = "left"
+	}
+	log.Printf("Team score position: %s", teamScorePosition)
 
 	trackerConfig := &cricket.CricketTrackerConfig{
 		RabbitMQURL:        cfg.RabbitMQURL,
@@ -191,6 +204,7 @@ func runCricketTracker() {
 		ProcessNames:       cfg.ProcessNames,
 		UseLLMOCR:          cfg.UseLLMOCR,
 		DebugZones:         cfg.DebugZones,
+		TeamScorePosition:  teamScorePosition,
 	}
 
 	tracker, err := cricket.NewCricketTracker(trackerConfig)

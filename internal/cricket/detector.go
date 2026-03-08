@@ -163,6 +163,15 @@ func detectEvents(prev, curr *MatchState) []*GameEvent {
 		return nil
 	}
 
+	// Suppress events during new innings transition: score has reset to 0/0 at the
+	// very start of a new innings (overs 0.0 or 0.1). The large negative runsDiff
+	// from the previous innings total would otherwise trigger false events.
+	if curr.TotalRuns == 0 && curr.Wickets == 0 &&
+		(curr.Overs == 0.0 || curr.Overs == 0.1) &&
+		(prev.TotalRuns > 0 || prev.Wickets > 0) {
+		return nil
+	}
+
 	runsDiff := curr.TotalRuns - prev.TotalRuns
 	wicketsDiff := curr.Wickets - prev.Wickets
 	events := make([]*GameEvent, 0, 2)

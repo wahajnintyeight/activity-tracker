@@ -19,8 +19,9 @@ type CricketConfig struct {
 	ScoreboardWidth    int
 	ScoreboardHeight   int
 	ProcessNames       []string
-	UseLLMOCR          bool // If true, send images to queue for LLM analysis instead of local OCR
-	DebugZones         bool // If true, save debug images of zones
+	UseLLMOCR           bool   // If true, send images to queue for LLM analysis instead of local OCR
+	DebugZones          bool   // If true, save debug images of zones
+	TeamScorePosition   string // "left" or "middle" — controls batsman HUD zone coordinates
 }
 
 // LoadCricketConfig reads cricket tracker configuration from environment
@@ -58,6 +59,9 @@ func LoadCricketConfig() *CricketConfig {
 	// Debug mode for vision zones
 	debugZones := getEnv("CRICKET_DEBUG_ZONES", "false") == "true"
 
+	// Team score panel position: "left" or "middle"
+	teamScorePosition := getEnv("CRICKET_TEAM_SCORE_POSITION", "left")
+
 	return &CricketConfig{
 		Interval:           interval,
 		RabbitMQURL:        rabbitmqURL,
@@ -67,8 +71,9 @@ func LoadCricketConfig() *CricketConfig {
 		ScoreboardY:        scoreboardY,
 		ScoreboardWidth:    scoreboardWidth,
 		ScoreboardHeight:   scoreboardHeight,
-		ProcessNames:       processNames,
-		UseLLMOCR:          useLLMOCR,
-		DebugZones:         debugZones,
+		ProcessNames:        processNames,
+		UseLLMOCR:           useLLMOCR,
+		DebugZones:          debugZones,
+		TeamScorePosition:   teamScorePosition,
 	}
 }
