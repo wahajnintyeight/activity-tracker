@@ -282,6 +282,12 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	if scoreboardState.TargetRuns > 0 {
 		currentState.TargetRuns = scoreboardState.TargetRuns
 	}
+	if scoreboardState.NeedRuns > 0 {
+		currentState.NeedRuns = scoreboardState.NeedRuns
+	}
+	if scoreboardState.NeedBalls > 0 {
+		currentState.NeedBalls = scoreboardState.NeedBalls
+	}
 
 	// Detect new innings start: score has reset to 0/0 at the very beginning of an innings
 	// (overs 0.0 or 0.1) while the previous state had a real score. Clear old batsmen
@@ -296,6 +302,9 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 		currentState.BatsmanRight = ""
 		currentState.BatsmanName = ""
 		currentState.IsStrikerOnLeft = false
+		currentState.TargetRuns = 0
+		currentState.NeedRuns = 0
+		currentState.NeedBalls = 0
 	}
 
 	updateBatsmenAndStrikerFromZones(img, currentState, previous, scoreboardState.BatsmanName, ocr, debug, gameType, teamScorePosition)

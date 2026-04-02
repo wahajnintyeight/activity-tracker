@@ -234,6 +234,8 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 				fmt.Sprintf("%0.1f", ct.matchState.Overs),
 				ct.matchState.BatsmanName,
 				ct.matchState.TargetRuns,
+				ct.matchState.NeedRuns,
+				ct.matchState.NeedBalls,
 			)
 
 			if err := ct.discordClient.UpdatePresence(info); err != nil {

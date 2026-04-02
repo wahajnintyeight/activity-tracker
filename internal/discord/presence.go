@@ -65,7 +65,7 @@ func FormatActivityPresence(processName, title string) PresenceInfo {
 }
 
 // FormatCricketPresence creates a PresenceInfo for cricket tracking
-func FormatCricketPresence(gameName, teamA, teamB, runs, wickets, overs, striker string, target int) PresenceInfo {
+func FormatCricketPresence(gameName, teamA, teamB, runs, wickets, overs, striker string, target, needRuns, needBalls int) PresenceInfo {
 	details := fmt.Sprintf("%s vs %s", teamA, teamB)
 	if teamA == "" || teamB == "" {
 		details = gameName
@@ -74,6 +74,9 @@ func FormatCricketPresence(gameName, teamA, teamB, runs, wickets, overs, striker
 	state := fmt.Sprintf("%s/%s (%s ov) - %s*", runs, wickets, overs, striker)
 	if target > 0 {
 		state = fmt.Sprintf("%s/%s (%s ov) | T:%d - %s*", runs, wickets, overs, target, striker)
+	}
+	if needRuns > 0 && needBalls > 0 {
+		state = fmt.Sprintf("%s | Need %d from %d", state, needRuns, needBalls)
 	}
 
 	return PresenceInfo{
