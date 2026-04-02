@@ -8,6 +8,7 @@ import (
 
 	"activity-tracker/internal/capture"
 	"activity-tracker/internal/config"
+	"activity-tracker/internal/discord"
 	"activity-tracker/internal/idle"
 	"activity-tracker/internal/uploader"
 
@@ -15,11 +16,12 @@ import (
 )
 
 type ScreenshotService struct {
-	config     *config.Config
-	deviceName string
-	logger     svc.Logger
-	capturer   *capture.Capturer
-	uploader   *uploader.Uploader
+	config        *config.Config
+	deviceName    string
+	logger        svc.Logger
+	capturer      *capture.Capturer
+	uploader      *uploader.Uploader
+	discordClient *discord.DiscordClient
 }
 
 func New(cfg *config.Config, deviceName string) (*ScreenshotService, error) {
@@ -36,10 +38,11 @@ func New(cfg *config.Config, deviceName string) (*ScreenshotService, error) {
 	}
 
 	return &ScreenshotService{
-		config:     cfg,
-		deviceName: deviceName,
-		capturer:   capture.New(cfg.Quality),
-		uploader:   uploaderInstance,
+		config:        cfg,
+		deviceName:    deviceName,
+		capturer:      capture.New(cfg.Quality),
+		uploader:      uploaderInstance,
+		discordClient: discord.NewDiscordClient(cfg.DiscordAppID),
 	}, nil
 }
 
@@ -121,6 +124,9 @@ func (s *ScreenshotService) captureAndSend() error {
 func (s *ScreenshotService) Stop(svc svc.Service) error {
 	s.logger.Info("Stopping screenshot service")
 	log.Println("Stopping screenshot service")
+	if s.discordClient != nil {
+		s.discordClient.Logout()
+	}
 	if s.uploader != nil {
 		s.uploader.Close()
 	}
@@ -170,7 +176,14 @@ func (s *ScreenshotService) captureAndSendWithLog() error {
 	}
 
 	if screenshot.ActiveWindow != nil {
+		s.logger.Infof("Active Window: %s (%s)", screenshot.ActiveWindow.ProcessName, screenshot.ActiveWindow.Title)
 		log.Printf("Active: %s (%s)\n", screenshot.ActiveWindow.ProcessName, screenshot.ActiveWindow.Title)
+		if s.discordClient != nil {
+			info := discord.FormatActivityPresence(screenshot.ActiveWindow.ProcessName, screenshot.ActiveWindow.Title)
+			if err := s.discordClient.UpdatePresence(info); err != nil {
+				s.logger.Warningf("Discord Presence Error: %v", err)
+			}
+		}
 	}
 
 	if err := s.uploader.Upload(screenshot); err != nil {
@@ -178,5 +191,6 @@ func (s *ScreenshotService) captureAndSendWithLog() error {
 	}
 
 	log.Println("Screenshot sent successfully")
+	s.logger.Info("Screenshot sent successfully")
 	return nil
 }

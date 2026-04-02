@@ -1,6 +1,7 @@
 package cricket
 
 import (
+	"activity-tracker/internal/discord"
 	"activity-tracker/internal/queue"
 	"activity-tracker/internal/window"
 	"bytes"
@@ -8,6 +9,7 @@ import (
 	"image"
 	"image/png"
 	"log"
+	"os"
 	"strings"
 	"time"
 )
@@ -15,6 +17,7 @@ import (
 type CricketTracker struct {
 	ocrClient         OCRClient
 	publisher         *queue.RabbitMQPublisher
+	discordClient     *discord.DiscordClient
 	matchState        *MatchState
 	scoreboardRect    image.Rectangle
 	interval          time.Duration
@@ -32,6 +35,7 @@ type CricketTrackerConfig struct {
 	RabbitMQURL        string
 	RabbitMQExchange   string
 	RabbitMQRoutingKey string
+	DiscordAppID       string
 	Interval           time.Duration
 	ScoreboardX        int
 	ScoreboardY        int
@@ -62,6 +66,12 @@ func NewCricketTracker(config *CricketTrackerConfig) (*CricketTracker, error) {
 		return nil, fmt.Errorf("failed to create RabbitMQ publisher: %w", err)
 	}
 
+	// Initialize Discord client
+	var discordClient *discord.DiscordClient
+	if config.DiscordAppID != "" {
+		discordClient = discord.NewDiscordClient(config.DiscordAppID)
+	}
+
 	// Set default process names if not provided
 	processNames := config.ProcessNames
 	if len(processNames) == 0 {
@@ -77,6 +87,7 @@ func NewCricketTracker(config *CricketTrackerConfig) (*CricketTracker, error) {
 	return &CricketTracker{
 		ocrClient:         ocrClient,
 		publisher:         publisher,
+		discordClient:     discordClient,
 		matchState:        nil,
 		scoreboardRect:    GetScoreboardRect(config.ScoreboardX, config.ScoreboardY, config.ScoreboardWidth, config.ScoreboardHeight),
 		interval:          config.Interval,
@@ -124,6 +135,10 @@ func (ct *CricketTracker) Stop() error {
 		ct.publisher.Close()
 	}
 
+	if ct.discordClient != nil {
+		ct.discordClient.Logout()
+	}
+
 	return nil
 }
 
@@ -153,6 +168,21 @@ func (ct *CricketTracker) processFrame() error {
 	img, err := CaptureScoreboardArea(ct.scoreboardRect)
 	if err != nil {
 		return fmt.Errorf("failed to capture scoreboard: %w", err)
+	}
+
+	// Debug scoreboard capture if enabled
+	if ct.debugZones {
+		debugDir := "debug_zones"
+		if _, err := os.Stat(debugDir); os.IsNotExist(err) {
+			os.MkdirAll(debugDir, 0755)
+		}
+		timestamp := time.Now().Format("20060102-150405.000")
+		debugPath := fmt.Sprintf("%s/scoreboard-%s.png", debugDir, timestamp)
+		if f, err := os.Create(debugPath); err == nil {
+			png.Encode(f, img)
+			f.Close()
+			log.Printf("Debug: Saved scoreboard capture to %s", debugPath)
+		}
 	}
 
 	// Two modes: Local OCR or LLM OCR
@@ -187,6 +217,29 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 	if ct.matchState != nil {
 		log.Printf("Batsmen: Left='%s', Right='%s' | Striker: '%s' (LeftIsStriker: %v)",
 			ct.matchState.BatsmanLeft, ct.matchState.BatsmanRight, ct.matchState.BatsmanName, ct.matchState.IsStrikerOnLeft)
+
+		if ct.discordClient != nil {
+			gameName := "Cricket 24"
+			if ct.gameType == "c26" {
+				gameName = "Cricket 26"
+			}
+
+			// Use refactored presence formatting
+			info := discord.FormatCricketPresence(
+				gameName,
+				ct.matchState.TeamName,
+				ct.matchState.OppositionName,
+				fmt.Sprintf("%d", ct.matchState.TotalRuns),
+				fmt.Sprintf("%d", ct.matchState.Wickets),
+				fmt.Sprintf("%0.1f", ct.matchState.Overs),
+				ct.matchState.BatsmanName,
+				ct.matchState.TargetRuns,
+			)
+
+			if err := ct.discordClient.UpdatePresence(info); err != nil {
+				log.Printf("Discord Presence Error: %v", err)
+			}
+		}
 	}
 
 	// If events detected, check duplicates and publish each

@@ -17,6 +17,7 @@ func main() {
 	// Parse command line arguments
 	var trackerType string
 	var teamScorePositionFlag string
+	var gameType string
 	if len(os.Args) > 1 {
 		for i, arg := range os.Args {
 			if arg == "--type" && i+1 < len(os.Args) {
@@ -25,12 +26,15 @@ func main() {
 			if arg == "--team-score-position" && i+1 < len(os.Args) {
 				teamScorePositionFlag = os.Args[i+1]
 			}
+			if arg == "--game-type" && i+1 < len(os.Args) {
+				gameType = os.Args[i+1]
+			}
 		}
 	}
 
 	// Handle cricket tracker mode
 	if trackerType == "cricket-tracker" {
-		runCricketTracker(teamScorePositionFlag)
+		runCricketTracker(teamScorePositionFlag, gameType)
 		return
 	}
 
@@ -177,10 +181,13 @@ func (p *serviceProgram) Stop(s svc.Service) error {
 	return nil
 }
 
-func runCricketTracker(teamScorePositionFlag string) {
+func runCricketTracker(teamScorePositionFlag string, gameType string) {
 	log.Println("Starting Cricket Tracker...")
 
 	cfg := config.LoadCricketConfig()
+	if gameType != "" {
+		cfg.GameType = gameType
+	}
 
 	// CLI flag overrides the env var value
 	teamScorePosition := cfg.TeamScorePosition
@@ -196,6 +203,7 @@ func runCricketTracker(teamScorePositionFlag string) {
 		RabbitMQURL:        cfg.RabbitMQURL,
 		RabbitMQExchange:   cfg.RabbitMQExchange,
 		RabbitMQRoutingKey: cfg.RabbitMQRoutingKey,
+		DiscordAppID:       cfg.DiscordAppID,
 		Interval:           cfg.Interval,
 		ScoreboardX:        cfg.ScoreboardX,
 		ScoreboardY:        cfg.ScoreboardY,

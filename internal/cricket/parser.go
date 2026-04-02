@@ -128,6 +128,17 @@ func parseScoreText(text string) *MatchState {
 	if matches := chasePattern.FindStringSubmatch(strings.ToLower(originalText)); len(matches) >= 3 {
 		state.NeedRuns, _ = strconv.Atoi(matches[1])
 		state.NeedBalls, _ = strconv.Atoi(matches[2])
+		// Heuristic: If we need X from Y balls, target is current runs + X
+		if state.TotalRuns > 0 {
+			state.TargetRuns = state.TotalRuns + state.NeedRuns
+		}
+	}
+
+	// Pattern 10: Team names (e.g., "AUS vs IND" or "AUSTRALIA vs INDIA")
+	teamNamePattern := regexp.MustCompile(`([A-Z\s]{3,15})\s+vs\s+([A-Z\s]{3,15})`)
+	if matches := teamNamePattern.FindStringSubmatch(originalText); len(matches) >= 3 {
+		state.TeamName = strings.TrimSpace(matches[1])
+		state.OppositionName = strings.TrimSpace(matches[2])
 	}
 
 	state.LastScore = originalText

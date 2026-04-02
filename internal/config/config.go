@@ -14,6 +14,7 @@ type Config struct {
 	RabbitMQURL        string
 	RabbitMQExchange   string
 	RabbitMQRoutingKey string
+	DiscordAppID       string
 }
 
 // Load reads configuration from environment variables or uses defaults
@@ -32,13 +33,14 @@ func Load() *Config {
 	rabbitmqURL := getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 	rabbitmqExchange := getEnv("RABBITMQ_EXCHANGE", "worker-service-exchange")
 	rabbitmqRoutingKey := getEnv("RABBITMQ_ROUTING_KEY", "process-screenshot")
-	print(rabbitmqURL)
+	discordAppID := getEnv("DISCORD_APP_ID", "")
 	return &Config{
 		Interval:           interval,
 		Quality:            quality,
 		RabbitMQURL:        rabbitmqURL,
 		RabbitMQExchange:   rabbitmqExchange,
 		RabbitMQRoutingKey: rabbitmqRoutingKey,
+		DiscordAppID:       discordAppID,
 	}
 }
 

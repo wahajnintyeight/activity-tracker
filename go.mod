@@ -1,14 +1,13 @@
 module activity-tracker
 
-go 1.23
-
-toolchain go1.23.2
+go 1.23.4
 
 require (
 	github.com/go-micro/plugins/v4/broker/rabbitmq v1.2.0
 	github.com/joho/godotenv v1.5.1
 	github.com/kardianos/service v1.2.2
 	github.com/kbinani/screenshot v0.0.0-20230812210009-b87d31814237
+	github.com/tropicalshadow/rich-go v0.0.0-20241209060649-252c579ab173
 	go-micro.dev/v4 v4.10.2
 	golang.org/x/sys v0.26.0
 )
@@ -53,6 +52,7 @@ require (
 	golang.org/x/text v0.19.0 // indirect
 	golang.org/x/tools v0.26.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
+	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )

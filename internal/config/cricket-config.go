@@ -14,6 +14,7 @@ type CricketConfig struct {
 	RabbitMQURL        string
 	RabbitMQExchange   string
 	RabbitMQRoutingKey string
+	DiscordAppID       string
 	ScoreboardX        int
 	ScoreboardY        int
 	ScoreboardWidth    int
@@ -40,6 +41,7 @@ func LoadCricketConfig() *CricketConfig {
 	rabbitmqURL := getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 	rabbitmqExchange := getEnv("CRICKET_RABBITMQ_EXCHANGE", "worker-service-exchange")
 	rabbitmqRoutingKey := getEnv("CRICKET_RABBITMQ_ROUTING_KEY", "cricket-event")
+	discordAppID := getEnv("DISCORD_APP_ID", "")
 
 	// Scoreboard coordinates (default for 1920x1080, bottom-left)
 	scoreboardX := getEnvInt("CRICKET_SCOREBOARD_X", 20)
@@ -71,6 +73,7 @@ func LoadCricketConfig() *CricketConfig {
 		RabbitMQURL:        rabbitmqURL,
 		RabbitMQExchange:   rabbitmqExchange,
 		RabbitMQRoutingKey: rabbitmqRoutingKey,
+		DiscordAppID:       discordAppID,
 		ScoreboardX:        scoreboardX,
 		ScoreboardY:        scoreboardY,
 		ScoreboardWidth:    scoreboardWidth,

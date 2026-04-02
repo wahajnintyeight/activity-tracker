@@ -41,6 +41,9 @@ type MatchState struct {
 	MatchWinner       string  `json:"match_winner"`        // Team that won the match
 	MatchWinMargin    int     `json:"match_win_margin"`    // Winning margin value
 	MatchWinType      string  `json:"match_win_type"`      // RUNS or WICKETS
+	TeamName          string  `json:"team_name"`           // Current batting team
+	OppositionName    string  `json:"opposition_name"`     // Bowling team
+	TargetRuns        int     `json:"target_runs"`         // Target runs in 2nd innings
 }
 
 type GameEvent struct {
@@ -268,6 +271,17 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	currentState.Overs = scoreboardState.Overs
 	currentState.BowlerName = scoreboardState.BowlerName
 	currentState.DeliverySpeed = scoreboardState.DeliverySpeed
+
+	// Update team names and target if found in standard score
+	if scoreboardState.TeamName != "" {
+		currentState.TeamName = scoreboardState.TeamName
+	}
+	if scoreboardState.OppositionName != "" {
+		currentState.OppositionName = scoreboardState.OppositionName
+	}
+	if scoreboardState.TargetRuns > 0 {
+		currentState.TargetRuns = scoreboardState.TargetRuns
+	}
 
 	// Detect new innings start: score has reset to 0/0 at the very beginning of an innings
 	// (overs 0.0 or 0.1) while the previous state had a real score. Clear old batsmen
