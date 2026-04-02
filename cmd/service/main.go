@@ -204,6 +204,7 @@ func runCricketTracker(teamScorePositionFlag string) {
 		ProcessNames:       cfg.ProcessNames,
 		UseLLMOCR:          cfg.UseLLMOCR,
 		DebugZones:         cfg.DebugZones,
+		GameType:           cfg.GameType,
 		TeamScorePosition:  teamScorePosition,
 	}
 

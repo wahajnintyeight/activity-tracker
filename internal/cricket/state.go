@@ -59,7 +59,7 @@ type CricketImagePayload struct {
 }
 
 // ProcessScoreWithVision analyzes OCR text and detects cricket events with the help of pixel scanning and targeted OCR
-func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState, ocr OCRClient, debug bool, teamScorePosition string) ([]*GameEvent, *MatchState) {
+func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState, ocr OCRClient, debug bool, gameType, teamScorePosition string) ([]*GameEvent, *MatchState) {
 	currentText = strings.TrimSpace(currentText)
 
 	if currentText == "" {
@@ -244,14 +244,14 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 
 	// 2. STANDARD SCOREBOARD PROCESSING
 	if previous != nil && currentText == previous.LastScore {
-		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug, teamScorePosition)
+		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug, gameType, teamScorePosition)
 		currentState.LastScore = currentText
 		return nil, currentState
 	}
 
 	scoreboardState := parseScoreText(currentText)
 	if scoreboardState == nil {
-		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug, teamScorePosition)
+		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug, gameType, teamScorePosition)
 		currentState.LastScore = currentText
 		return nil, currentState
 	}
@@ -284,7 +284,7 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 		currentState.IsStrikerOnLeft = false
 	}
 
-	updateBatsmenAndStrikerFromZones(img, currentState, previous, scoreboardState.BatsmanName, ocr, debug, teamScorePosition)
+	updateBatsmenAndStrikerFromZones(img, currentState, previous, scoreboardState.BatsmanName, ocr, debug, gameType, teamScorePosition)
 
 	events := detectEvents(previous, currentState)
 	currentState.LastScore = currentText
@@ -292,29 +292,13 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	return events, currentState
 }
 
-func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState, previous *MatchState, scoreboardBatsman string, ocr OCRClient, debug bool, teamScorePosition string) {
+func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState *MatchState, previous *MatchState, scoreboardBatsman string, ocr OCRClient, debug bool, gameType, teamScorePosition string) {
 	if img == nil || currentState == nil || ocr == nil {
 		return
 	}
 
-	// Select zone coordinates based on where the team score panel is positioned.
-	type zone struct {
-		rect [2][2]int
-		side string
-	}
-	var zones []zone
-	switch strings.ToLower(teamScorePosition) {
-	case "middle":
-		zones = []zone{
-			{rect: [2][2]int{{235, 500}, {85, 140}}, side: "left"},
-			{rect: [2][2]int{{573, 837}, {85, 140}}, side: "right"},
-		}
-	default: // "left" and anything else
-		zones = []zone{
-			{rect: [2][2]int{{440, 635}, {85, 140}}, side: "left"},
-			{rect: [2][2]int{{810, 1000}, {85, 140}}, side: "right"},
-		}
-	}
+	// Select zone coordinates
+	zones := GetZones(gameType, teamScorePosition)
 
 	bounds := img.Bounds()
 	if bounds.Dx() < 1000 || bounds.Dy() < 130 {
@@ -323,31 +307,31 @@ func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState, previous *M
 
 	strikerDetectedThisFrame := false
 	for _, z := range zones {
-		rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
+		rect := image.Rect(z.Rect[0][0], z.Rect[1][0], z.Rect[0][1], z.Rect[1][1])
 		sub := img.SubImage(rect).(*image.RGBA)
 		zoneText, _ := ocr.ExtractText(sub)
 
 		cleanName := cleanZoneName(zoneText)
 		if cleanName != "" {
-			if z.side == "left" && currentState.BatsmanLeft == "" {
+			if z.Side == "left" && currentState.BatsmanLeft == "" {
 				currentState.BatsmanLeft = cleanName
-			} else if z.side == "right" && currentState.BatsmanRight == "" {
+			} else if z.Side == "right" && currentState.BatsmanRight == "" {
 				currentState.BatsmanRight = cleanName
 			}
 		}
 
-		if DetectStriker(sub, z.side, debug) || hasStrikerIndicator(zoneText) {
-			currentState.IsStrikerOnLeft = (z.side == "left")
+		if DetectStriker(sub, z.Side, debug) || hasStrikerIndicator(zoneText) {
+			currentState.IsStrikerOnLeft = (z.Side == "left")
 			strikerDetectedThisFrame = true
 		}
 	}
 
 	if containsDigit(currentState.BatsmanLeft) {
 		for _, z := range zones {
-			if z.side != "left" {
+			if z.Side != "left" {
 				continue
 			}
-			rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
+			rect := image.Rect(z.Rect[0][0], z.Rect[1][0], z.Rect[0][1], z.Rect[1][1])
 			sub := img.SubImage(rect).(*image.RGBA)
 			name, _ := ocr.ExtractText(sub)
 			cleanName := cleanZoneName(name)
@@ -359,10 +343,10 @@ func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState, previous *M
 	}
 	if containsDigit(currentState.BatsmanRight) {
 		for _, z := range zones {
-			if z.side != "right" {
+			if z.Side != "right" {
 				continue
 			}
-			rect := image.Rect(z.rect[0][0], z.rect[1][0], z.rect[0][1], z.rect[1][1])
+			rect := image.Rect(z.Rect[0][0], z.Rect[1][0], z.Rect[0][1], z.Rect[1][1])
 			sub := img.SubImage(rect).(*image.RGBA)
 			name, _ := ocr.ExtractText(sub)
 			cleanName := cleanZoneName(name)

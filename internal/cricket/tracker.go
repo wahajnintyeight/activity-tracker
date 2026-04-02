@@ -21,6 +21,7 @@ type CricketTracker struct {
 	processNames      []string // Cricket game process names to monitor
 	useLLMOCR         bool     // If true, send images to queue instead of doing local OCR
 	debugZones        bool     // If true, save debug images of zones
+	gameType          string   // "c24" or "c26" — selects HUD zone coordinates
 	teamScorePosition string   // "left" or "middle"
 	stopChan          chan struct{}
 	lastEvent         *GameEvent // Track last event to prevent duplicates
@@ -39,6 +40,7 @@ type CricketTrackerConfig struct {
 	ProcessNames       []string
 	UseLLMOCR          bool   // If true, send images to queue for LLM analysis
 	DebugZones         bool   // If true, save debug images of zones
+	GameType           string // "c24" or "c26" — selects HUD zone coordinates
 	TeamScorePosition  string // "left" or "middle"
 }
 
@@ -63,7 +65,7 @@ func NewCricketTracker(config *CricketTrackerConfig) (*CricketTracker, error) {
 	// Set default process names if not provided
 	processNames := config.ProcessNames
 	if len(processNames) == 0 {
-		processNames = []string{"Cricket24.exe", "cricket.exe", "Cricket 24.exe"}
+		processNames = []string{"Cricket24.exe", "cricket.exe", "Cricket 24.exe", "Cricket26.exe"}
 	}
 
 	mode := "Local OCR (Windows Native)"
@@ -81,6 +83,7 @@ func NewCricketTracker(config *CricketTrackerConfig) (*CricketTracker, error) {
 		processNames:      processNames,
 		useLLMOCR:         config.UseLLMOCR,
 		debugZones:        config.DebugZones,
+		gameType:          config.GameType,
 		teamScorePosition: config.TeamScorePosition,
 		stopChan:          make(chan struct{}),
 	}, nil
@@ -178,7 +181,7 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 	}
 
 	// Process score and detect events
-	events, newState := ProcessScoreWithVision(img, text, ct.matchState, ct.ocrClient, ct.debugZones, ct.teamScorePosition)
+	events, newState := ProcessScoreWithVision(img, text, ct.matchState, ct.ocrClient, ct.debugZones, ct.gameType, ct.teamScorePosition)
 	ct.matchState = newState
 
 	if ct.matchState != nil {
