@@ -7,10 +7,31 @@ import (
 )
 
 // parseScoreText extracts runs, wickets, and overs from OCR text
-func parseScoreText(text string) *MatchState {
+func parseScoreText(text string, gameType GameType) *MatchState {
 	originalText := text
 	state := &MatchState{}
 	lines := strings.Split(text, "\n")
+
+	textLower := strings.ToLower(text)
+
+	// Pattern for Cricket 26 as per user formatting:
+	// TEAMSCORE - WICKETS <OVERS> = team's score
+	// WICKETS - SCORE (OVERS) = bowler's figures
+	if gameType == GameTypeC26 {
+		teamScoreWithOversPattern := regexp.MustCompile(`(\d+)[/-](\d+)\s+(\d+\.?\d*)`)
+		if matches := teamScoreWithOversPattern.FindStringSubmatch(textLower); len(matches) >= 4 {
+			state.TotalRuns, _ = strconv.Atoi(matches[1])
+			state.Wickets, _ = strconv.Atoi(matches[2])
+			state.Overs, _ = strconv.ParseFloat(matches[3], 64)
+		}
+
+		bowlerFigurePattern := regexp.MustCompile(`(\d+)[/-](\d+)\s+\((\d+\.?\d*)\)`)
+		if matches := bowlerFigurePattern.FindStringSubmatch(textLower); len(matches) >= 4 {
+			state.BowlerWickets, _ = strconv.Atoi(matches[1])
+			state.BowlerRunsGiven, _ = strconv.Atoi(matches[2])
+			state.BowlerOvers, _ = strconv.ParseFloat(matches[3], 64)
+		}
+	}
 
 	scorePattern := regexp.MustCompile(`(\d+)[/-](\d+)`)
 
@@ -19,45 +40,52 @@ func parseScoreText(text string) *MatchState {
 		lineLower := strings.ToLower(line)
 
 		// Pattern 1: Team Score - Wickets/Runs (e.g., "6/180")
-		if matches := scorePattern.FindAllStringSubmatch(lineLower, -1); len(matches) > 0 {
-			bestWickets := 0
-			bestRuns := 0
-			for _, m := range matches {
-				if len(m) < 3 {
-					continue
-				}
-				w, _ := strconv.Atoi(m[1])
-				r, _ := strconv.Atoi(m[2])
+		// Only used for non-c26 or if c26 failed to parse
+		if state.TotalRuns == 0 {
+			if matches := scorePattern.FindAllStringSubmatch(lineLower, -1); len(matches) > 0 {
+				bestWickets := 0
+				bestRuns := 0
+				for _, m := range matches {
+					if len(m) < 3 {
+						continue
+					}
+					w, _ := strconv.Atoi(m[1])
+					r, _ := strconv.Atoi(m[2])
 
-				// Heuristic: prefer realistic team scores over bowler figures like 1-49.
-				// Team runs are typically the larger number in the HUD; bowler conceded runs are usually much smaller.
-				if w < 0 || w > 10 {
-					continue
-				}
-				if r <= bestRuns {
-					continue
+					// Heuristic: prefer realistic team scores over bowler figures like 1-49.
+					// Team runs are typically the larger number in the HUD; bowler conceded runs are usually much smaller.
+					if w < 0 || w > 10 {
+						continue
+					}
+					if r <= bestRuns {
+						continue
+					}
+
+					bestWickets = w
+					bestRuns = r
 				}
 
-				bestWickets = w
-				bestRuns = r
-			}
-
-			if bestRuns > 0 {
-				state.Wickets = bestWickets
-				state.TotalRuns = bestRuns
+				if bestRuns > 0 {
+					state.Wickets = bestWickets
+					state.TotalRuns = bestRuns
+				}
 			}
 		}
 
 		// Pattern 2: Team overs (e.g., "27.3 overs")
-		oversPattern := regexp.MustCompile(`(\d+\.?\d*)\s*overs?`)
-		if matches := oversPattern.FindStringSubmatch(lineLower); len(matches) >= 2 {
-			state.Overs, _ = strconv.ParseFloat(matches[1], 64)
+		if state.Overs == 0 {
+			oversPattern := regexp.MustCompile(`(\d+\.?\d*)\s*overs?`)
+			if matches := oversPattern.FindStringSubmatch(lineLower); len(matches) >= 2 {
+				state.Overs, _ = strconv.ParseFloat(matches[1], 64)
+			}
 		}
 
 		// Pattern 3: Bowler overs in brackets (e.g., "(9.1)")
-		bowlerOversPattern := regexp.MustCompile(`\((\d+\.?\d*)\)`)
-		if matches := bowlerOversPattern.FindStringSubmatch(lineLower); len(matches) >= 2 {
-			state.BowlerOvers, _ = strconv.ParseFloat(matches[1], 64)
+		if state.BowlerOvers == 0 {
+			bowlerOversPattern := regexp.MustCompile(`\((\d+\.?\d*)\)`)
+			if matches := bowlerOversPattern.FindStringSubmatch(lineLower); len(matches) >= 2 {
+				state.BowlerOvers, _ = strconv.ParseFloat(matches[1], 64)
+			}
 		}
 
 		// Pattern 4a: Bowler name with wickets-runs format (e.g., "s. thakur 0-30")

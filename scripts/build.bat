@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0.."
 echo Building activity-tracker.exe...
 
 REM Create output directory if it doesn't exist
@@ -21,8 +22,8 @@ if %errorlevel% equ 0 (
     )
     echo.
     echo Usage:
-    echo   install-startup.bat              - Add to Windows startup
-    echo   uninstall-startup.bat            - Remove from startup
+    echo   .\scripts\install-startup.bat              - Add to Windows startup
+    echo   .\scripts\uninstall-startup.bat            - Remove from startup
     echo   start output\activity-tracker.exe - Run in background now
     echo.
 ) else (

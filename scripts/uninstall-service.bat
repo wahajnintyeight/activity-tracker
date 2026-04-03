@@ -1,8 +1,9 @@
 @echo off
+cd /d "%~dp0.."
 echo Uninstalling Cricket Tracker Windows Service...
 echo.
 
-set "APP_DIR=%~dp0"
+set "APP_DIR=%CD%\"
 set "EXE_PATH=%APP_DIR%output\service.exe"
 
 if not exist "%EXE_PATH%" (

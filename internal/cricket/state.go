@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+type GameType string
+
+const (
+	GameTypeC24 GameType = "c24"
+	GameTypeC26 GameType = "c26"
+)
+
 type MatchState struct {
 	TotalRuns         int     `json:"total_runs"`
 	Wickets           int     `json:"wickets"`
@@ -62,7 +69,7 @@ type CricketImagePayload struct {
 }
 
 // ProcessScoreWithVision analyzes OCR text and detects cricket events with the help of pixel scanning and targeted OCR
-func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState, ocr OCRClient, debug bool, gameType, teamScorePosition string) ([]*GameEvent, *MatchState) {
+func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *MatchState, ocr OCRClient, debug bool, gameType GameType, teamScorePosition string) ([]*GameEvent, *MatchState) {
 	currentText = strings.TrimSpace(currentText)
 
 	if currentText == "" {
@@ -252,7 +259,7 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 		return nil, currentState
 	}
 
-	scoreboardState := parseScoreText(currentText)
+	scoreboardState := parseScoreText(currentText, gameType)
 	if scoreboardState == nil {
 		updateBatsmenAndStrikerFromZones(img, currentState, previous, "", ocr, debug, gameType, teamScorePosition)
 		currentState.LastScore = currentText
@@ -315,7 +322,7 @@ func ProcessScoreWithVision(img *image.RGBA, currentText string, previous *Match
 	return events, currentState
 }
 
-func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState *MatchState, previous *MatchState, scoreboardBatsman string, ocr OCRClient, debug bool, gameType, teamScorePosition string) {
+func updateBatsmenAndStrikerFromZones(img *image.RGBA, currentState *MatchState, previous *MatchState, scoreboardBatsman string, ocr OCRClient, debug bool, gameType GameType, teamScorePosition string) {
 	if img == nil || currentState == nil || ocr == nil {
 		return
 	}

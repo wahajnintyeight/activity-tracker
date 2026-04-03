@@ -32,7 +32,7 @@ go mod download
 
 ### Build
 ```bash
-build.bat
+.\scripts\build.bat
 ```
 
 ## Usage
@@ -43,10 +43,10 @@ build.bat
 .\output\service.exe
 
 # Install as Windows service
-.\install-startup.bat
+.\scripts\install-startup.bat
 
 # Uninstall service
-.\uninstall-startup.bat
+.\scripts\uninstall-startup.bat
 ```
 
 ### Cricket Tracker

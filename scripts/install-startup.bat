@@ -1,9 +1,10 @@
 @echo off
+cd /d "%~dp0.."
 echo Installing Activity Tracker to Windows Startup...
 echo.
 
 REM Get the current directory
-set "APP_DIR=%~dp0"
+set "APP_DIR=%CD%\"
 set "EXE_PATH=%APP_DIR%output\activity-tracker.exe"
 
 REM Check if executable exists
@@ -29,7 +30,7 @@ if exist "%SHORTCUT_PATH%" (
     echo It runs in the background without showing a window.
     echo.
     echo To start now: start output\activity-tracker.exe
-    echo To uninstall: uninstall-startup.bat
+    echo To uninstall: .\scripts\uninstall-startup.bat
 ) else (
     echo.
     echo Failed to create startup shortcut

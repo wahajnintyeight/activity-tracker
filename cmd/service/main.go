@@ -181,13 +181,10 @@ func (p *serviceProgram) Stop(s svc.Service) error {
 	return nil
 }
 
-func runCricketTracker(teamScorePositionFlag string, gameType string) {
+func runCricketTracker(teamScorePositionFlag string, gameTypeFlag string) {
 	log.Println("Starting Cricket Tracker...")
 
-	cfg := config.LoadCricketConfig()
-	if gameType != "" {
-		cfg.GameType = gameType
-	}
+	cfg := config.LoadCricketConfig(gameTypeFlag)
 
 	// CLI flag overrides the env var value
 	teamScorePosition := cfg.TeamScorePosition

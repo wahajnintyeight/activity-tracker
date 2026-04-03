@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0.."
 echo Building Cricket Tracker...
 echo.
 
@@ -26,10 +27,13 @@ echo Where is the team score panel on screen?
 echo   [L] Left
 echo   [M] Middle
 echo.
-choice /c LM /n /m "Select position (L/M): "
+set /p POS="Select position (L/M) and press Enter: "
 
-if %ERRORLEVEL% EQU 1 set TEAM_SCORE_POSITION=left
-if %ERRORLEVEL% EQU 2 set TEAM_SCORE_POSITION=middle
+if /i "%POS%"=="M" (
+    set TEAM_SCORE_POSITION=middle
+) else (
+    set TEAM_SCORE_POSITION=left
+)
 
 echo.
 echo Starting Cricket Tracker (team-score-position=%TEAM_SCORE_POSITION%)...

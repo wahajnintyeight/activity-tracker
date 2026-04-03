@@ -1,9 +1,10 @@
 @echo off
+cd /d "%~dp0.."
 echo Installing Cricket Tracker as Windows Service...
 echo.
 
 REM Get current directory
-set "APP_DIR=%~dp0"
+set "APP_DIR=%CD%\"
 set "EXE_PATH=%APP_DIR%output\service.exe"
 
 REM Check if executable exists

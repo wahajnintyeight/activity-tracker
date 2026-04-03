@@ -1,7 +1,7 @@
 @echo off
+cd /d "%~dp0.."
 echo Starting Cricket Tracker...
 
-cd /d "%~dp0"
 if exist "output\service.exe" (
     output\service.exe --type cricket-tracker
 ) else (

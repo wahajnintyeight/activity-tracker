@@ -24,7 +24,7 @@ type CricketTracker struct {
 	processNames      []string // Cricket game process names to monitor
 	useLLMOCR         bool     // If true, send images to queue instead of doing local OCR
 	debugZones        bool     // If true, save debug images of zones
-	gameType          string   // "c24" or "c26" — selects HUD zone coordinates
+	gameType          GameType // "c24" or "c26" — selects HUD zone coordinates
 	teamScorePosition string   // "left" or "middle"
 	stopChan          chan struct{}
 	lastEvent         *GameEvent // Track last event to prevent duplicates
@@ -42,10 +42,10 @@ type CricketTrackerConfig struct {
 	ScoreboardWidth    int
 	ScoreboardHeight   int
 	ProcessNames       []string
-	UseLLMOCR          bool   // If true, send images to queue for LLM analysis
-	DebugZones         bool   // If true, save debug images of zones
-	GameType           string // "c24" or "c26" — selects HUD zone coordinates
-	TeamScorePosition  string // "left" or "middle"
+	UseLLMOCR          bool     // If true, send images to queue for LLM analysis
+	DebugZones         bool     // If true, save debug images of zones
+	GameType           GameType // "c24" or "c26" — selects HUD zone coordinates
+	TeamScorePosition  string   // "left" or "middle"
 }
 
 // NewCricketTracker creates a new cricket tracking service
@@ -103,6 +103,7 @@ func NewCricketTracker(config *CricketTrackerConfig) (*CricketTracker, error) {
 // Start begins the cricket tracking loop
 func (ct *CricketTracker) Start() error {
 	log.Println("Cricket Tracker started")
+	log.Printf("Game Type: %s", ct.gameType)
 	log.Printf("Monitoring processes: %v", ct.processNames)
 	log.Printf("Scoreboard area: %v", ct.scoreboardRect)
 	log.Printf("Scan interval: %v", ct.interval)
@@ -151,7 +152,7 @@ func (ct *CricketTracker) processFrame() error {
 	}
 
 	// Check if active process matches any cricket game
-	isCricketActive := true
+	isCricketActive := false
 	for _, procName := range ct.processNames {
 		if strings.EqualFold(activeWin.ProcessName, procName) {
 			isCricketActive = true
@@ -220,7 +221,7 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 
 		if ct.discordClient != nil {
 			gameName := "Cricket 24"
-			if ct.gameType == "c26" {
+			if ct.gameType == GameTypeC26 {
 				gameName = "Cricket 26"
 			}
 

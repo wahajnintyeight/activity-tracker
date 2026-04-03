@@ -10,8 +10,8 @@ type ZoneProfile struct {
 	Middle []Zone
 }
 
-var zoneProfilesByGame = map[string]ZoneProfile{
-	"c24": {
+var zoneProfilesByGame = map[GameType]ZoneProfile{
+	GameTypeC24: {
 		Left: []Zone{
 			{Rect: [2][2]int{{440, 635}, {75, 135}}, Side: "left"},
 			{Rect: [2][2]int{{810, 1000}, {75, 135}}, Side: "right"},
@@ -21,7 +21,7 @@ var zoneProfilesByGame = map[string]ZoneProfile{
 			{Rect: [2][2]int{{575, 840}, {75, 135}}, Side: "right"},
 		},
 	},
-	"c26": {
+	GameTypeC26: {
 		Left: []Zone{
 			{Rect: [2][2]int{{470, 670}, {75, 135}}, Side: "left"},
 			{Rect: [2][2]int{{840, 1040}, {75, 135}}, Side: "right"},
@@ -33,10 +33,10 @@ var zoneProfilesByGame = map[string]ZoneProfile{
 	},
 }
 
-func GetZones(gameType, teamScorePosition string) []Zone {
+func GetZones(gameType GameType, teamScorePosition string) []Zone {
 	p, ok := zoneProfilesByGame[gameType]
 	if !ok {
-		p = zoneProfilesByGame["c24"]
+		p = zoneProfilesByGame[GameTypeC24]
 	}
 
 	switch teamScorePosition {

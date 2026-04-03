@@ -1,8 +1,9 @@
 @echo off
+cd /d "%~dp0.."
 echo Starting Cricket Tracker Service...
 echo.
 
-set "APP_DIR=%~dp0"
+set "APP_DIR=%CD%\"
 set "EXE_PATH=%APP_DIR%output\service.exe"
 
 if not exist "%EXE_PATH%" (
@@ -25,7 +26,7 @@ if %ERRORLEVEL% EQU 0 (
     echo.
     echo Failed to start service
     echo Make sure the service is installed first:
-    echo   install-service.bat
+    echo   .\scripts\install-service.bat
 )
 
 echo.
