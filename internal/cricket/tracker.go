@@ -26,9 +26,12 @@ type CricketTracker struct {
 	debugZones        bool     // If true, save debug images of zones
 	gameType          GameType // "c24" or "c26" — selects HUD zone coordinates
 	teamScorePosition string   // "left" or "middle"
+	disableEvents     bool     // If true, suppress RabbitMQ events (Discord Rich Presence remains active)
 	stopChan          chan struct{}
 	lastEvent         *GameEvent // Track last event to prevent duplicates
 	lastEventTime     time.Time  // Track when last event was sent
+	lastEventMsg      string     // Re-formatted message for presence (e.g. "WICKET!")
+	lastEventMsgTime  time.Time  // When the message was set
 }
 
 type CricketTrackerConfig struct {
@@ -46,6 +49,7 @@ type CricketTrackerConfig struct {
 	DebugZones         bool     // If true, save debug images of zones
 	GameType           GameType // "c24" or "c26" — selects HUD zone coordinates
 	TeamScorePosition  string   // "left" or "middle"
+	DisableEvents      bool     // If true, suppress RabbitMQ events
 }
 
 // NewCricketTracker creates a new cricket tracking service
@@ -96,6 +100,7 @@ func NewCricketTracker(config *CricketTrackerConfig) (*CricketTracker, error) {
 		debugZones:        config.DebugZones,
 		gameType:          config.GameType,
 		teamScorePosition: config.TeamScorePosition,
+		disableEvents:     config.DisableEvents,
 		stopChan:          make(chan struct{}),
 	}, nil
 }
@@ -152,7 +157,7 @@ func (ct *CricketTracker) processFrame() error {
 	}
 
 	// Check if active process matches any cricket game
-	isCricketActive := false
+	isCricketActive := true
 	for _, procName := range ct.processNames {
 		if strings.EqualFold(activeWin.ProcessName, procName) {
 			isCricketActive = true
@@ -237,6 +242,7 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 				ct.matchState.TargetRuns,
 				ct.matchState.NeedRuns,
 				ct.matchState.NeedBalls,
+				ct.lastEventMsg,
 			)
 
 			if err := ct.discordClient.UpdatePresence(info); err != nil {
@@ -251,9 +257,18 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 			continue
 		}
 
+		if ct.disableEvents {
+			log.Printf("Events disabled - skipping RabbitMQ publish: %s", event.Type)
+			continue
+		}
+
 		// Deduplicate: Check if this is the same event as the last one
 		if ct.shouldPublishEvent(event) {
 			log.Printf("Cricket Event Detected: %s - %s", event.Type, event.Payload)
+
+			// Store event message for presence (display for 15s)
+			ct.lastEventMsg = formatEventForPresence(event)
+			ct.lastEventMsgTime = time.Now()
 
 			if err := ct.publisher.Publish(event); err != nil {
 				return fmt.Errorf("failed to publish event: %w", err)
@@ -267,7 +282,36 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 		}
 	}
 
+	// Reset event message if older than 15 seconds
+	if time.Since(ct.lastEventMsgTime) > 15*time.Second {
+		ct.lastEventMsg = ""
+	}
+
 	return nil
+}
+
+// formatEventForPresence converts an internal event type to a short display message
+func formatEventForPresence(event *GameEvent) string {
+	switch event.Type {
+	case EventTypeWicket, EventTypeBatsmanDepart:
+		return "WICKET!"
+	case EventTypeBoundaryFour:
+		return "FOUR!"
+	case EventTypeBoundarySix:
+		return "SIX!"
+	case EventTypeBatsmanArrive:
+		return "NEW BATSMAN"
+	case EventTypeBowlerArrive:
+		return "NEW BOWLER"
+	case EventTypeMilestone:
+		return "MILESTONE!"
+	case EventTypeTeamMilestone:
+		return "TEAM MILESTONE!"
+	case EventTypeMatchWon:
+		return "MATCH ENDED"
+	default:
+		return ""
+	}
 }
 
 // shouldPublishEvent checks if an event should be published (deduplication)

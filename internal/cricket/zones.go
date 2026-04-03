@@ -27,8 +27,8 @@ var zoneProfilesByGame = map[GameType]ZoneProfile{
 			{Rect: [2][2]int{{840, 1040}, {75, 135}}, Side: "right"},
 		},
 		Middle: []Zone{
-			{Rect: [2][2]int{{255, 535}, {75, 135}}, Side: "left"},
-			{Rect: [2][2]int{{600, 880}, {75, 135}}, Side: "right"},
+			{Rect: [2][2]int{{55, 400}, {165, 200}}, Side: "left"},
+			{Rect: [2][2]int{{55, 400}, {125, 160}}, Side: "right"}, 
 		},
 	},
 }

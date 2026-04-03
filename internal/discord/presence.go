@@ -16,6 +16,7 @@ type PresenceInfo struct {
 	SmallImage string
 	SmallText  string
 	StartTime  *time.Time
+	HideTime   bool // If true, don't show the elapsed time in Discord
 }
 
 // UpdatePresence handles the actual IPC call to Discord
@@ -39,14 +40,16 @@ func (d *DiscordClient) UpdatePresence(info PresenceInfo) error {
 		SmallText:  info.SmallText,
 	}
 
-	if info.StartTime != nil {
-		activity.Timestamps = &client.Timestamps{
-			Start: info.StartTime,
-		}
-	} else {
-		now := time.Now()
-		activity.Timestamps = &client.Timestamps{
-			Start: &now,
+	if !info.HideTime {
+		if info.StartTime != nil {
+			activity.Timestamps = &client.Timestamps{
+				Start: info.StartTime,
+			}
+		} else {
+			now := time.Now()
+			activity.Timestamps = &client.Timestamps{
+				Start: &now,
+			}
 		}
 	}
 
@@ -65,18 +68,36 @@ func FormatActivityPresence(processName, title string) PresenceInfo {
 }
 
 // FormatCricketPresence creates a PresenceInfo for cricket tracking
-func FormatCricketPresence(gameName, teamA, teamB, runs, wickets, overs, striker string, target, needRuns, needBalls int) PresenceInfo {
-	details := fmt.Sprintf("%s vs %s", teamA, teamB)
-	if teamA == "" || teamB == "" {
-		details = gameName
+func FormatCricketPresence(gameName, teamA, teamB, runs, wickets, overs, striker string, target, needRuns, needBalls int, lastEvent string) PresenceInfo {
+	// Line 1: In a match: TEAM A vs TEAM B
+	details := "In a match"
+	if teamA != "" && teamB != "" {
+		details = fmt.Sprintf("In a match: %s v %s", teamA, teamB)
 	}
 
-	state := fmt.Sprintf("%s/%s (%s ov) - %s*", runs, wickets, overs, striker)
-	if target > 0 {
-		state = fmt.Sprintf("%s/%s (%s ov) | T:%d - %s*", runs, wickets, overs, target, striker)
+	// Line 2: Score & Striker / Chase / Event (Optimized for mobile)
+	// Priority 1: Important Event (WICKET!, FOUR!, etc.)
+	// Priority 2: Chase (N: 10r from 12b)
+	// Priority 3: Standard (Score (Ov) - Striker*)
+	
+	state := fmt.Sprintf("%s/%s (%s) - %s*", runs, wickets, overs, striker)
+
+	if lastEvent != "" {
+		// Display event message prominently
+		state = fmt.Sprintf("%s | %s/%s (%s)", lastEvent, runs, wickets, overs)
+	} else if needRuns > 0 && needBalls > 0 {
+		// New chase format: N: <RUNS>r from <BALLS>b
+		state = fmt.Sprintf("%s/%s (%s) | N: %dr from %db", runs, wickets, overs, needRuns, needBalls)
+	} else if target > 0 {
+		state = fmt.Sprintf("%s/%s (%s) | T:%d", runs, wickets, overs, target)
 	}
-	if needRuns > 0 && needBalls > 0 {
-		state = fmt.Sprintf("%s | Need %d from %d", state, needRuns, needBalls)
+
+	// Truncate to avoid Discord cutting off text (approx 128 chars, but mobile is tighter)
+	if len(details) > 64 {
+		details = details[:61] + "..."
+	}
+	if len(state) > 64 {
+		state = state[:61] + "..."
 	}
 
 	return PresenceInfo{
@@ -84,5 +105,6 @@ func FormatCricketPresence(gameName, teamA, teamB, runs, wickets, overs, striker
 		State:      state,
 		LargeImage: "cricket_icon",
 		LargeText:  gameName,
+		HideTime:   true, // Hide elapsed time as requested
 	}
 }

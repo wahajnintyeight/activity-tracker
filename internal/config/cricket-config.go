@@ -25,6 +25,7 @@ type CricketConfig struct {
 	DebugZones         bool             // If true, save debug images of zones
 	GameType           cricket.GameType // "c24" or "c26" — selects HUD zone coordinates
 	TeamScorePosition  string           // "left" or "middle" — controls batsman HUD zone coordinates
+	DisableEvents      bool             // If true, suppress RabbitMQ events
 }
 
 // LoadCricketConfig reads cricket tracker configuration from environment
@@ -88,6 +89,9 @@ func LoadCricketConfig(gameTypeOverride string) *CricketConfig {
 	// Team score panel position: "left" or "middle"
 	teamScorePosition := getEnv("CRICKET_TEAM_SCORE_POSITION", "left")
 
+	// Disable events toggle (suppresses RabbitMQ, keeps Discord Rich Presence)
+	disableEvents := getEnv("CRICKET_DISABLE_EVENTS", "false") == "true"
+
 	return &CricketConfig{
 		Interval:           interval,
 		RabbitMQURL:        rabbitmqURL,
@@ -103,5 +107,6 @@ func LoadCricketConfig(gameTypeOverride string) *CricketConfig {
 		DebugZones:         debugZones,
 		GameType:           gameType,
 		TeamScorePosition:  teamScorePosition,
+		DisableEvents:      disableEvents,
 	}
 }

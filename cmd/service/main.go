@@ -211,6 +211,7 @@ func runCricketTracker(teamScorePositionFlag string, gameTypeFlag string) {
 		DebugZones:         cfg.DebugZones,
 		GameType:           cfg.GameType,
 		TeamScorePosition:  teamScorePosition,
+		DisableEvents:      cfg.DisableEvents,
 	}
 
 	tracker, err := cricket.NewCricketTracker(trackerConfig)
