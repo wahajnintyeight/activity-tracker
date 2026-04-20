@@ -475,10 +475,15 @@ func cleanZoneName(text string) string {
 
 func hasStrikerIndicator(text string) bool {
 	t := strings.TrimSpace(strings.ToLower(text))
+	// Added more variants of what the triangle might look like to OCR
 	return strings.Contains(t, ">") ||
 		strings.Contains(t, "|>") ||
 		strings.Contains(t, ">>") ||
-		strings.Contains(t, "▶")
+		strings.Contains(t, "▶") ||
+		strings.Contains(t, "»") ||
+		strings.Contains(t, "►") ||
+		strings.HasPrefix(t, "v") || // Sometimes OCR sees the triangle as a 'v'
+		strings.HasPrefix(t, "i") // Or a stray 'i' or '|'
 }
 
 func matchesPlayer(a, b string) bool {

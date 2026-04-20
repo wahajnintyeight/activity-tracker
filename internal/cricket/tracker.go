@@ -157,7 +157,7 @@ func (ct *CricketTracker) processFrame() error {
 	}
 
 	// Check if active process matches any cricket game
-	isCricketActive := true
+	isCricketActive := false
 	for _, procName := range ct.processNames {
 		if strings.EqualFold(activeWin.ProcessName, procName) {
 			isCricketActive = true
@@ -257,11 +257,6 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 			continue
 		}
 
-		if ct.disableEvents {
-			log.Printf("Events disabled - skipping RabbitMQ publish: %s", event.Type)
-			continue
-		}
-
 		// Deduplicate: Check if this is the same event as the last one
 		if ct.shouldPublishEvent(event) {
 			log.Printf("Cricket Event Detected: %s - %s", event.Type, event.Payload)
@@ -270,13 +265,18 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 			ct.lastEventMsg = formatEventForPresence(event)
 			ct.lastEventMsgTime = time.Now()
 
-			if err := ct.publisher.Publish(event); err != nil {
-				return fmt.Errorf("failed to publish event: %w", err)
-			}
-
 			// Update last event tracking
 			ct.lastEvent = event
 			ct.lastEventTime = time.Now()
+
+			if ct.disableEvents {
+				log.Printf("Events disabled - skipping RabbitMQ publish: %s", event.Type)
+				continue
+			}
+
+			if err := ct.publisher.Publish(event); err != nil {
+				return fmt.Errorf("failed to publish event: %w", err)
+			}
 		} else {
 			log.Printf("Duplicate event suppressed: %s", event.Type)
 		}
@@ -292,18 +292,39 @@ func (ct *CricketTracker) processFrameLocal(img *image.RGBA) error {
 
 // formatEventForPresence converts an internal event type to a short display message
 func formatEventForPresence(event *GameEvent) string {
+	name := ""
+	if event.MatchData != nil {
+		name = event.MatchData.BatsmanName
+	}
+
 	switch event.Type {
 	case EventTypeWicket, EventTypeBatsmanDepart:
+		if name != "" {
+			return fmt.Sprintf("WICKET: %s", name)
+		}
 		return "WICKET!"
 	case EventTypeBoundaryFour:
 		return "FOUR!"
 	case EventTypeBoundarySix:
 		return "SIX!"
 	case EventTypeBatsmanArrive:
+		if name != "" {
+			return fmt.Sprintf("NEW BATSMAN: %s", name)
+		}
 		return "NEW BATSMAN"
 	case EventTypeBowlerArrive:
+		bowler := ""
+		if event.MatchData != nil {
+			bowler = event.MatchData.BowlerName
+		}
+		if bowler != "" {
+			return fmt.Sprintf("NEW BOWLER: %s", bowler)
+		}
 		return "NEW BOWLER"
 	case EventTypeMilestone:
+		if name != "" {
+			return fmt.Sprintf("MILESTONE: %s", name)
+		}
 		return "MILESTONE!"
 	case EventTypeTeamMilestone:
 		return "TEAM MILESTONE!"

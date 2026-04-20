@@ -22,9 +22,9 @@ type StrikerDetector struct {
 
 func DefaultStrikerDetector() StrikerDetector {
 	return StrikerDetector{
-		BrightThreshold: 0.90,
-		MinBrightRatio:  0.05,
-		MinColumnsOn:    0.17,
+		BrightThreshold: 0.82, // Lowered from 0.90 to catch off-white markers
+		MinBrightRatio:  0.03, // Lowered from 0.05
+		MinColumnsOn:    0.12, // Lowered from 0.17
 	}
 }
 
@@ -64,11 +64,11 @@ func (d StrikerDetector) HasStrikerMarker(zone *image.RGBA, side string, debug b
 	}
 
 	// markerW: scan the leftmost portion where the marker is expected
-	markerW := clampInt(int(math.Round(float64(w)*0.18)), 10, 28)
+	markerW := clampInt(int(math.Round(float64(w)*0.18)), 10, 45) // Increased max from 28 to 45
 	print("[Marker W] : ", markerW)
 	// padding: ignore top/bottom edges to avoid HUD border noise
-	padTop := clampInt(int(math.Round(float64(h)*0.18)), 0, h)
-	padBot := clampInt(int(math.Round(float64(h)*0.18)), 0, h)
+	padTop := clampInt(int(math.Round(float64(h)*0.10)), 0, h) // Reduced padding from 18% to 10%
+	padBot := clampInt(int(math.Round(float64(h)*0.10)), 0, h) // Reduced padding from 18% to 10%
 
 	y0 := b.Min.Y + padTop
 	y1 := b.Max.Y - padBot
