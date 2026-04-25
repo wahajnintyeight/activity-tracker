@@ -1,6 +1,7 @@
 package uploader
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log"
 	"time"
@@ -49,9 +50,12 @@ func (u *Uploader) Upload(screenshot *capture.Screenshot) error {
 		message["active_process_id"] = screenshot.ActiveWindow.ProcessID
 	}
 
-	// TODO: Upload image to S3/storage and include URL in message
-	// For now, we'll just send metadata
-	// message["image_url"] = "s3://bucket/path/to/image.jpg"
+	// Encode image data to base64 for transmission
+	if len(screenshot.ImageData) > 0 {
+		imageBase64 := base64.StdEncoding.EncodeToString(screenshot.ImageData)
+		message["image_data"] = imageBase64
+		log.Printf("Encoded image to base64 (%d bytes -> %d chars)", len(screenshot.ImageData), len(imageBase64))
+	}
 
 	// Publish to RabbitMQ
 	if err := u.publisher.Publish(message); err != nil {

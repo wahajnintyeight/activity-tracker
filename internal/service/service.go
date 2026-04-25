@@ -176,12 +176,16 @@ func (s *ScreenshotService) captureAndSendWithLog() error {
 	}
 
 	if screenshot.ActiveWindow != nil {
-		s.logger.Infof("Active Window: %s (%s)", screenshot.ActiveWindow.ProcessName, screenshot.ActiveWindow.Title)
+		if s.logger != nil {
+			s.logger.Infof("Active Window: %s (%s)", screenshot.ActiveWindow.ProcessName, screenshot.ActiveWindow.Title)
+		}
 		log.Printf("Active: %s (%s)\n", screenshot.ActiveWindow.ProcessName, screenshot.ActiveWindow.Title)
 		if s.discordClient != nil {
 			info := discord.FormatActivityPresence(screenshot.ActiveWindow.ProcessName, screenshot.ActiveWindow.Title)
 			if err := s.discordClient.UpdatePresence(info); err != nil {
-				s.logger.Warningf("Discord Presence Error: %v", err)
+				if s.logger != nil {
+					s.logger.Warningf("Discord Presence Error: %v", err)
+				}
 			}
 		}
 	}
@@ -191,6 +195,8 @@ func (s *ScreenshotService) captureAndSendWithLog() error {
 	}
 
 	log.Println("Screenshot sent successfully")
-	s.logger.Info("Screenshot sent successfully")
+	if s.logger != nil {
+		s.logger.Info("Screenshot sent successfully")
+	}
 	return nil
 }
